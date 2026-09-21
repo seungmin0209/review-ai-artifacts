@@ -13,7 +13,7 @@ Stop (턴 종료)
 설정 파일이 없으면 mode=ask 로 만들고 first_run 을 표시해 "발동 방식을 먼저 물어라" 를 한 번 넣는다.
 처리한 문서는 ~/.config/review-ai-artifacts/state.json 에 세션별로 기록해 같은 문서를 두 번 띄우지 않는다.
 """
-import sys, os, re, json, pathlib, subprocess, socket, time, urllib.request, unicodedata
+import sys, os, re, json, pathlib, subprocess, socket, time, urllib.request, urllib.parse, unicodedata
 def nfc(s): return unicodedata.normalize("NFC", str(s))   # macOS 는 한글 파일명을 NFD(자모 분해)로 돌려준다 — 경로 비교는 전부 NFC 로
 HERE = pathlib.Path(__file__).resolve().parent
 CFG_DIR = pathlib.Path.home() / ".config" / "review-ai-artifacts"
@@ -143,11 +143,13 @@ def recent_htmls(roots, since, handled, transcript=None, others=()):
     found = [p for p in found if nfc(p) not in served]
     return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
 
-def monitor_cmd(doc, sid, port):
+def monitor_cmd(doc, sid, port, label=""):
     """Claude 세션이 그대로 붙여 쓰는 감시 명령. owner 가 이 세션인 새 제출만 알리고, 60초마다 /watch heartbeat 를 찍어 화면이 '감시 연결' 을 알게 한다.
+    heartbeat 에 세션 신분을 실어 보내므로, fork 로 갈라진 세션이 둘 다 지켜보면 화면이 제출 대상을 고르는 선택칸을 띄운다.
     Monitor 도구는 최대 30분(도구 상한)이라 만료 알림마다 같은 명령으로 다시 건다. 시작 시 처리 안 된 제출을 먼저 훑으므로 재무장 사이의 공백에 들어온 제출도 놓치지 않는다."""
     ev = str(doc.parent / "_review_events.jsonl").replace('"', '\\"')
-    return (f"( while true; do curl -s -m 2 -X POST http://127.0.0.1:{port}/watch >/dev/null 2>&1; sleep 60; done ) & "
+    who = f"session={urllib.parse.quote(sid)}&label={urllib.parse.quote(label or sid[:8])}"
+    return (f"( while true; do curl -s -m 2 -X POST 'http://127.0.0.1:{port}/watch?{who}' >/dev/null 2>&1; sleep 60; done ) & "
             # 시작할 때 아직 처리 안 된(new) 내 제출을 먼저 훑는다 — Monitor 는 30분마다 만료돼 다시 걸어야 하는데, 그 사이 들어온 제출을 tail -n 0 이 건너뛴다
             f"( [ -f \"{ev}\" ] && cat \"{ev}\"; tail -n 0 -F \"{ev}\" 2>/dev/null ) | grep --line-buffered \"\\\"status\\\": \\\"new\\\"\" | grep --line-buffered \"\\\"owner\\\": \\\"{sid}\\\"\" "
             f"| while IFS= read -r l; do printf '%s' \"$l\" | python3 -c 'import sys,json; e=json.load(sys.stdin); print(\"[review-ai-artifacts] 새 제출\", e[\"id\"], \"final\" if e.get(\"final\") else (\"approved\" if e.get(\"approved\") else \"\"), \"edits\", len(e.get(\"edits\",[])), \"comments\", len(e.get(\"comments\",[])))'; done")
@@ -174,8 +176,8 @@ def instruct(event, doc, cfg, agent, sid):
              f"사용자가 이 세션에서 이어받기를 원하면 먼저 확인을 받아라. 규약: {skill}")
     port = port or launch(doc, agent, sid, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     emit(event, f"{lead} '{doc.name}' 을 편집·댓글 화면으로 띄웠다: http://localhost:{port}/ . 사용자에게 이 주소와 \"이중클릭으로 고치고 우클릭으로 댓글, 끝나면 [검토 제출]\" 을 한 줄로 알려라. "
-         f"**지금 바로 Monitor 를 걸어라(Claude Code)** — 걸지 않으면 사용자가 제출해도 이 세션은 깨어나지 않는다. 다른 세션의 제출은 owner 필터로 걸러진다. timeout_ms 는 도구 상한인 1800000(30분) — **만료 알림이 오면 다른 일보다 먼저 같은 명령으로 다시 건다.** 시작할 때 밀린 제출을 먼저 알리므로 공백에 들어온 것도 잡힌다:\n"
-         f"  Monitor(description=\"{doc.name} 제출 감시\", timeout_ms=1800000, command=\"{monitor_cmd(doc, sid, port)}\")\n"
+         f"**지금 바로 Monitor 를 걸어라(Claude Code)** — 걸지 않으면 사용자가 제출해도 이 세션은 깨어나지 않는다. 다른 세션의 제출은 owner 필터로 걸러진다. label 은 이 세션을 알아볼 이름으로 바꿔도 된다 — fork 로 갈라져 둘이 함께 지켜보면 화면에 이 이름이 제출 대상 선택칸으로 뜬다. timeout_ms 는 도구 상한인 1800000(30분) — **만료 알림이 오면 다른 일보다 먼저 같은 명령으로 다시 건다.** 시작할 때 밀린 제출을 먼저 알리므로 공백에 들어온 것도 잡힌다:\n"
+         f"  Monitor(description=\"{doc.name} 제출 감시\", timeout_ms=1800000, command=\"{monitor_cmd(doc, sid, port, f"{pathlib.Path(os.getcwd()).name} · {sid[:8]}")}\")\n"
          f"Codex는 CODEX_THREAD_ID와 codex queue 연결을 /health에서 확인한다(서버가 직접 깨운다). 제출 이벤트 파일: {doc.parent/'_review_events.jsonl'} — status \"new\" 줄이 오면 edits 는 반영 확인, comments 는 파일을 고쳐 저장하고 --ack. 규약: {skill}")
 
 def main():

@@ -15,7 +15,7 @@ Claude Code · Codex · Gemini CLI 등 어느 에이전트와도 쓴다. 화면 
 문서에 <script id="oub-meta"> 가 있고 OPENUB_REPORT_LIB 환경변수가 있으면 저장 때 수정일·이력을 갱신한다(openub-report 연동, 선택).
 ponytail: 글자 수정과 댓글만. 요소 추가·삭제·이동은 댓글로 에이전트에게 맡긴다.
 """
-import sys, os, re, json, pathlib, datetime, webbrowser, http.server, argparse, shutil, threading, time, unicodedata
+import sys, os, re, json, pathlib, datetime, webbrowser, http.server, argparse, shutil, threading, time, unicodedata, urllib.parse
 def nfc(s): return unicodedata.normalize("NFC", str(s))   # macOS 한글 파일명(NFD) 과 사람이 친 경로(NFC) 를 같게 본다
 import events as review_events
 from html import escape as html_escape
@@ -188,10 +188,14 @@ body{padding-top:50px!important}
 #__rv_bar,#__rv_pop,.__rv_pin,#__rv_bar *,#__rv_pop *{word-break:keep-all;overflow-wrap:normal;white-space:normal;writing-mode:horizontal-tb;letter-spacing:normal;text-transform:none;text-align:left;box-sizing:border-box}
 #__rv_bar *,#__rv_pop *{position:static;float:none;min-width:0;max-width:none;min-height:0;transform:none}
 #__rv_bar,#__rv_bar *{white-space:nowrap}#__rv_bar{flex-wrap:nowrap;min-height:50px;box-sizing:border-box}
-#__rv_bar button,#__rv_bar b{flex:0 0 auto}   /* 버튼은 줄어들지 않는다 — 줄어드는 건 상태줄과 안내문만 */
+#__rv_bar button,#__rv_bar b,#__rv_bar select{flex:0 0 auto}   /* 버튼은 줄어들지 않는다 — 줄어드는 건 상태줄과 안내문만 */
+#__rv_bar #__rv_to{font:inherit;font-size:13px;max-width:240px;padding:6px 8px;border-radius:8px;border:1px solid #3a3a3a;background:#2b2b2b;color:#e8e8e8;cursor:pointer}   /* 지켜보는 세션이 둘 이상일 때만 나타난다 */
 #__rv_bar .st{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}#__rv_bar .hint{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 #__rv_pop .t{color:#8f8f8f;font-size:15px;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #__rv_pop .a{color:#a8a8a8;font-size:14px;border-left:2px solid #6b6b6b;padding-left:10px;margin-bottom:12px;max-height:44px;overflow:hidden}
+#__rv_pop .a.th{max-height:none;padding-top:2px;padding-bottom:2px}   /* 그림은 글로 설명하지 않고 실물을 축소해 보여준다 */
+#__rv_pop .a .thb{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;background:#fff;border-radius:5px;padding:5px;box-sizing:border-box;overflow:hidden}
+#__rv_pop .a .thb>*{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}
 #__rv_pop textarea{width:100%;min-height:64px;font:inherit;font-size:17px;color:#fff;background:transparent;border:0;outline:0;padding:0;resize:none;box-sizing:border-box}
 #__rv_pop textarea::placeholder{color:#6f6f6f}
 #__rv_pop .sw{margin:-4px 0 6px}#__rv_pop .sw button{font:inherit;font-size:12.5px;color:#9aa4b2;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline dotted}#__rv_pop .sw button:disabled{text-decoration:none;cursor:default;color:#8a8a8a}
@@ -263,18 +267,35 @@ function label(el){var tag=el.tagName.toLowerCase();   // 인라인 SVG 의 tagN
       n=aname(el)||(el.querySelector('figcaption,h1,h2,h3,h4')||{textContent:''}).textContent.replace(/\s+/g,' ').trim().slice(0,120);
     if(k||n)return ('['+(k||'요소')+'] '+n).trim()}
   return s.slice(0,160)}
+function thumb(el){   // 그림·아이콘은 글로 설명하는 것보다 실물을 축소해 보여주는 편이 확실하다. 라벨은 화면에서 빼고 제출 데이터에만 싣는다
+  var tag=el.tagName.toLowerCase(),
+      g=/^(img|svg|canvas|video|picture)$/.test(tag)?el:el.querySelector('img,svg,canvas,video');
+  if(!g)return null;
+  var t=g.tagName.toLowerCase(),box=document.createElement('span');box.className='thb';
+  try{
+    if(t==='img'){if(!(g.currentSrc||g.src))return null;var i=new Image();i.src=g.currentSrc||g.src;box.appendChild(i)}
+    else if(t==='picture'){var s=g.querySelector('img');if(!s||!(s.currentSrc||s.src))return null;var i2=new Image();i2.src=s.currentSrc||s.src;box.appendChild(i2)}
+    else if(t==='svg'){var c=g.cloneNode(true);c.removeAttribute('width');c.removeAttribute('height');c.removeAttribute('class');c.style.width='100%';c.style.height='100%';box.appendChild(c)}
+    else if(t==='canvas'){var i3=new Image();i3.src=g.toDataURL();box.appendChild(i3)}   // 교차출처로 오염된 캔버스는 여기서 예외가 난다
+    else if(t==='video'){if(!g.poster)return null;var i4=new Image();i4.src=g.poster;box.appendChild(i4)}
+    else return null;
+  }catch(e){return null}
+  return box}
+function paintA(d,th,txt){var a=d.querySelector('.a');a.classList.remove('th');a.textContent='';
+  if(th){a.classList.add('th');a.appendChild(th)}else a.textContent=txt}
 function openPop(t,quote,range,x,y){closePop();if(t)t.setAttribute('data-rv-target','');var d=document.createElement('div');d.id='__rv_pop';
   d.style.left=Math.max(8,Math.min(x,window.innerWidth-580+window.scrollX))+'px';d.style.top=(y+10)+'px';
-  var whole=(t?label(t):'문서 전체에 대한 종합 댓글').replace(/</g,'&lt;');
+  var wholeRaw=t?label(t):'문서 전체에 대한 종합 댓글',whole=wholeRaw.replace(/</g,'&lt;'),TH=t?thumb(t):null;
   var mine=notes.filter(function(x){return x.el===t});
   var list=mine.length?'<ul class="list">'+mine.map(function(x){return '<li><b>#'+x.n+'</b><span>'+(x.quote?'“'+x.quote.slice(0,40).replace(/</g,'&lt;')+'” · ':'')+x.text.replace(/</g,'&lt;')+'</span><button type="button" data-del="'+x.n+'" title="이 댓글 삭제">✕</button></li>'}).join('')+'</ul>':'';
   d.innerHTML='<div class="t">'+(document.title||location.pathname).replace(/</g,'&lt;')+'</div>'+list+'<div class="a" data-mode="'+(quote?'quote':'whole')+'">'+(quote?quote.slice(0,160).replace(/</g,'&lt;'):whole)+'</div>'
    +(t?'<div class="sw"><button type="button" data-a="sw">'+(quote?'이 요소 전체에 달기':'문구만 고르려면 드래그 후 우클릭')+'</button></div>':'')
    +'<textarea rows="2" placeholder="'+(mine.length?'댓글 추가':'댓글 남기기')+'"></textarea><div class="r"><span class="lbl">Send to __AGENT__</span><button class="go" data-a="ok" disabled aria-label="보내기"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>';
   document.body.appendChild(d);var ta=d.querySelector('textarea'),go=d.querySelector('.go');ta.focus();
+  if(!quote)paintA(d,TH,wholeRaw);
   d.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
     if(b.dataset.del){var n=+b.dataset.del;notes=notes.filter(function(x){return x.n!==n});refreshPins();closePop();return}   // 댓글 삭제
-    if(b.dataset.a==='sw'&&quote){quote='';range=null;d.querySelector('.a').textContent=whole;d.querySelector('.a').dataset.mode='whole';b.textContent='요소 전체에 달기로 바꿨습니다';b.disabled=true;ta.focus()}});
+    if(b.dataset.a==='sw'&&quote){quote='';range=null;paintA(d,TH,wholeRaw);d.querySelector('.a').dataset.mode='whole';b.textContent='요소 전체에 달기로 바꿨습니다';b.disabled=true;ta.focus()}});
   ta.addEventListener('input',function(){go.disabled=!ta.value.trim();ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,240)+'px'});
   ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();go.click()}});
   go.addEventListener('click',function(){if(!ta.value.trim())return;
@@ -315,8 +336,18 @@ function save(force,fromSubmit){if(document.activeElement&&document.activeElemen
      st.textContent='저장 실패: '+e;throw e})}
 btn.addEventListener('click',function(){save().catch(function(){})});
 var fin=document.getElementById('__rv_fin'),OWNER_LABEL=__OWNER_LABEL__;
+var SEL=null,LIST=[];   // 이 문서를 지켜보는 세션 목록. fork 로 갈라지면 둘 이상이 된다
+function setListeners(rows){rows=rows||[];
+  if(rows.length===LIST.length&&rows.every(function(r,i){return r.session===LIST[i].session&&r.label===LIST[i].label}))return;
+  LIST=rows;var box=document.getElementById('__rv_to');
+  if(rows.length<2){if(box)box.remove();SEL=null;return}   // 한 세션뿐이면 고를 것이 없다 — 지금까지와 똑같이 동작한다
+  if(!box){box=document.createElement('select');box.id='__rv_to';box.title='제출을 받을 세션';ok.parentNode.insertBefore(box,ok)}
+  var keep=SEL;box.innerHTML=rows.map(function(r){return '<option value="'+String(r.session).replace(/"/g,'&quot;')+'">'+String(r.label).replace(/</g,'&lt;')+'</option>'}).join('');
+  box.value=(keep&&rows.some(function(r){return r.session===keep}))?keep:rows[0].session;SEL=box.value;
+  box.onchange=function(){SEL=box.value}}
 function submit(btnEl,final){if(btnEl.disabled)return;ok.disabled=fin.disabled=true;requestId=requestId||crypto.randomUUID();
   var ev={id:requestId,final:!!final,edits:edits(),comments:notes.map(function(x){return {n:x.n,path:x.path,anchor:x.anchor,quote:x.quote,text:x.text}})};ev.approved=!!final||(!ev.edits.length&&!ev.comments.length);   // 변경·댓글 없이 제출 = 이상 없음(승인) · 마무리 = 수정이 있어도 이걸로 끝
+  if(SEL)ev.to=SEL;   // 이 문서를 지켜보는 세션이 둘 이상이면(fork 쌍둥이) 고른 쪽으로만 보낸다
   ((dirty&&!ISMD)?save(false,true).catch(function(e){if(e.code===409){ev.conflict=true;return}throw e}):Promise.resolve())   // 409 = 새 판 위에 얹어 달라는 제출
   .then(function(){return post('/confirm',JSON.stringify(ev),'application/json')})
   .then(function(t){if(!ev.conflict)return t;   // 옛 판 위에서 제출했다 — 지금 파일(새 판)을 기준으로 삼아, 에이전트가 이 수정을 얹은 다음 판이 나올 때 새로 고친다
@@ -385,7 +416,7 @@ document.addEventListener('mouseover',function(e){
   requestAnimationFrame(function(){if(!TIP)return;var t=TIP.getBoundingClientRect();
     if(t.right>window.innerWidth-8)TIP.style.left=Math.max(8,window.innerWidth-t.width-8+window.scrollX)+'px'})});
 showChanges();
-setInterval(function(){if(STALE||ok.disabled)return;fetch('/status').then(function(r){return r.json()}).then(function(r){setWatched(r.watched);if(r.id||r.pending_count){lastEvent=r;showStatus(r)}}).catch(function(){})},2000);
+setInterval(function(){if(STALE||ok.disabled)return;fetch('/status').then(function(r){return r.json()}).then(function(r){setWatched(r.watched);setListeners(r.listeners);if(r.id||r.pending_count){lastEvent=r;showStatus(r)}}).catch(function(){})},2000);
 var MT=__MTIME__;setInterval(function(){fetch('/mtime').then(function(r){return r.text()}).then(function(m){if(m===MT)return;
   if(dirty||notes.length||(document.activeElement&&document.activeElement.isContentEditable)){
     STALE=true;fresh.hidden=false;
@@ -469,7 +500,12 @@ def reply(h, code, text, ctype="text/plain;charset=utf-8"):
 
 LAST = [time.time()]   # 마지막 요청 시각. 브라우저 탭이 열려 있으면 2초마다 /mtime 이 들어온다
 WATCH = [0.0]          # 이 문서를 지켜보는 세션(Monitor)의 마지막 heartbeat. 90초 안이면 "감시 연결"
+LISTENERS = {}         # 세션ID -> {label, ts}. fork 로 갈라진 쌍둥이가 같은 문서를 함께 지켜볼 수 있다
 def watched(): return CODEX is not None or time.time() - WATCH[0] < 90
+def listeners():   # 최근 3분 안에 heartbeat 를 보낸 세션만 살아 있다고 본다. 죽은 세션은 폴링이 끊겨 저절로 빠진다
+    now = time.time()
+    rows = [{"session": s, "label": v["label"], "self": s == OWNER} for s, v in LISTENERS.items() if now - v["ts"] < 180]
+    return sorted(rows, key=lambda r: (not r["self"], r["label"]))
 def quit_server(why):
     threading.Thread(target=lambda: (time.sleep(.3), SRV.shutdown()), daemon=True).start()   # 먼저 예약한다 — 로그가 실패해도 종료는 취소되지 않는다
     try:   # 훅이 띄운 서버는 stdout 파이프가 닫혀 있어 print 에서 BrokenPipeError 가 난다 (그 탓에 종료가 통째로 취소되곤 했다)
@@ -489,7 +525,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health": return reply(self, 200, json.dumps({"version":3,"doc":str(DOC),"owner":OWNER,"owner_label":OWNER_LABEL,"thread_id":THREAD,"automatic":bool(THREAD and CODEX)}), "application/json")
         if self.path == "/status":
-            st_ = review_events.status(EVENTS, DOC, THREAD if CODEX else None, OWNER); st_["watched"] = watched()
+            st_ = review_events.status(EVENTS, DOC, THREAD if CODEX else None, OWNER); st_["watched"] = watched(); st_["listeners"] = listeners()
             return reply(self, 200, json.dumps(st_, ensure_ascii=False), "application/json")
         if self.path.startswith("/mtime"): return reply(self, 200, str(DOC.stat().st_mtime_ns))
         if self.path == "/changes":   # 가장 최근 반영의 변경 표시
@@ -517,12 +553,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not bak.exists(): bak.write_bytes(DOC.read_bytes())
             raw = bump_meta(raw); DOC.write_text(raw, encoding="utf-8")
             return reply(self, 200, f"저장됨 {len(raw.encode()):,}B")
-        if self.path.startswith("/watch"): WATCH[0] = time.time(); return reply(self, 200, "ok")   # 감시 세션의 heartbeat
+        if self.path.startswith("/watch"):   # 감시 세션의 heartbeat. ?session=&label= 를 붙이면 명단에 오른다 (fork 쌍둥이 구분용)
+            WATCH[0] = time.time()
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            s = (q.get("session") or [""])[0]
+            if s: LISTENERS[s] = {"label": ((q.get("label") or [""])[0] or s)[:80], "ts": time.time()}   # 신분 없는 구형 heartbeat 도 그대로 받는다
+            return reply(self, 200, json.dumps({"listeners": listeners()}, ensure_ascii=False), "application/json")
         if self.path.startswith("/quit"):
             reply(self, 200, f"편집기 종료: {DOC.name} (포트 {PORT})"); return quit_server("--close")
         if self.path.startswith("/confirm"):
             try:
-                ev = review_events.submit(EVENTS, DOC, AGENT, "md" if IS_MD else "html", json.loads(raw), THREAD, CODEX, OWNER)
+                payload = json.loads(raw); to = str(payload.pop("to", "") or "") or OWNER   # 지켜보는 세션이 여럿이면 화면에서 고른 쪽으로 보낸다
+                ev = review_events.submit(EVENTS, DOC, AGENT, "md" if IS_MD else "html", payload, THREAD, CODEX, to)
                 ev = dict(ev, watched=watched())   # 제출 직후 화면이 "깨어날 세션이 있는지" 를 바로 알아야 한다 (/status 만으로는 한 박자 늦다)
                 return reply(self, 200, json.dumps(ev, ensure_ascii=False), "application/json")
             except (ValueError, TypeError, TimeoutError) as error:
