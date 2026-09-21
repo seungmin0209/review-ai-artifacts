@@ -185,7 +185,7 @@ mark[data-rv-mark]{background:rgba(128,140,160,.35);color:inherit;border-radius:
   padding:9px 18px;background:#1f1f1f;color:#d4d4d4;font:13px/1.4 -apple-system,system-ui,sans-serif;border-bottom:1px solid #333}
 body{padding-top:50px!important}
 #__rv_bar b{color:#fff;margin-right:6px;letter-spacing:-.2px}#__rv_bar button{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid #3a3a3a;background:#2b2b2b;color:#e8e8e8;cursor:pointer}
-#__rv_bar button.pri{background:#c96442;border-color:#c96442;color:#fff;font-weight:600}#__rv_bar button.pri.off,#__rv_bar button.fin.off{background:#4a4a4a;border-color:#5a5a5a;color:#bdbdbd}#__rv_bar .warn{color:#f0c040}#__rv_bar button.fin{background:#1f8a4c;border-color:#1f8a4c;color:#fff;font-weight:600}#__rv_bar #__rv_marks.on{border-color:#e0a000;color:#f0c040}#__rv_bar button:disabled{opacity:.45;cursor:default}#__rv_bar .st{color:#8a8a8a}#__rv_bar .hint{margin-left:auto;color:#8a8a8a;text-align:right}
+#__rv_bar button.pri{background:#c96442;border-color:#c96442;color:#fff;font-weight:600}#__rv_bar button.pri.off,#__rv_bar button.fin.off{background:#4a4a4a;border-color:#5a5a5a;color:#bdbdbd}#__rv_bar .warn{color:#f0c040}#__rv_bar button.fin{background:#1f8a4c;border-color:#1f8a4c;color:#fff;font-weight:600}#__rv_bar #__rv_marks.on{border-color:#e0a000;color:#f0c040}#__rv_bar button.pri.busy,#__rv_bar button.fin.busy{background:#4a4a4a;border-color:#5a5a5a;color:#bdbdbd}#__rv_bar button:disabled{opacity:.45;cursor:default}#__rv_bar .st{color:#8a8a8a}#__rv_bar .hint{margin-left:auto;color:#8a8a8a;text-align:right}
 #__rv_pop{position:absolute;z-index:100000;color-scheme:dark;background:#2b2b2b;color:#ececec;border:1px solid #3d3d3d;border-radius:16px;padding:18px 22px 16px;
   box-shadow:0 12px 40px rgba(0,0,0,.45);width:560px;max-width:calc(100vw - 32px);font:15px/1.5 -apple-system,system-ui,"Apple SD Gothic Neo",sans-serif}
 /* 문서 쪽 CSS(overflow-wrap:anywhere, word-break, writing-mode 등)가 새어 들어와 글자가 한 자씩 세로로 끊기는 것을 막는다 */
@@ -358,7 +358,13 @@ function setListeners(rows){rows=rows||[];
   var keep=SEL;box.innerHTML=rows.map(function(r){return '<option value="'+String(r.session).replace(/"/g,'&quot;')+'">'+String(r.label).replace(/</g,'&lt;')+'</option>'}).join('');
   box.value=(keep&&rows.some(function(r){return r.session===keep}))?keep:rows[0].session;SEL=box.value;
   box.onchange=function(){SEL=box.value}}
-function submit(btnEl,final){if(btnEl.disabled)return;ok.disabled=fin.disabled=true;requestId=requestId||crypto.randomUUID();
+function busyOn(){   // 누른 것이 보이게 — 왕복이 빨라 disabled 만으로는 깜빡이고 만다
+  [ok,fin].forEach(function(b){if(b.dataset.rvLabel===undefined)b.dataset.rvLabel=b.textContent;b.classList.add('busy')});
+  ok.textContent='제출 중…';fin.textContent='제출 중…';return Date.now()}
+function busyOff(t0){   // 응답이 더 빨라도 5초는 유지한다
+  setTimeout(function(){[ok,fin].forEach(function(b){b.classList.remove('busy');if(b.dataset.rvLabel!==undefined)b.textContent=b.dataset.rvLabel});
+    ok.disabled=fin.disabled=false},Math.max(0,5000-(Date.now()-t0)))}
+function submit(btnEl,final){if(btnEl.disabled)return;ok.disabled=fin.disabled=true;var __t0=busyOn();requestId=requestId||crypto.randomUUID();
   var ev={id:requestId,final:!!final,edits:edits(),comments:notes.map(function(x){return {n:x.n,path:x.path,anchor:x.anchor,quote:x.quote,text:x.text}})};ev.approved=!!final||(!ev.edits.length&&!ev.comments.length);   // 변경·댓글 없이 제출 = 이상 없음(승인) · 마무리 = 수정이 있어도 이걸로 끝
   if(SEL)ev.to=SEL;   // 이 문서를 지켜보는 세션이 둘 이상이면(fork 쌍둥이) 고른 쪽으로만 보낸다
   ((dirty&&!ISMD)?save(false,true).catch(function(e){if(e.code===409){ev.conflict=true;return}throw e}):Promise.resolve())   // 409 = 새 판 위에 얹어 달라는 제출
@@ -366,7 +372,7 @@ function submit(btnEl,final){if(btnEl.disabled)return;ok.disabled=fin.disabled=t
   .then(function(t){if(!ev.conflict)return t;   // 옛 판 위에서 제출했다 — 지금 파일(새 판)을 기준으로 삼아, 에이전트가 이 수정을 얹은 다음 판이 나올 때 새로 고친다
     return fetch('/mtime').then(function(r){return r.text()}).then(function(m){MT=m;STALE=false;fresh.hidden=true;return t})})
   .then(function(t){lastEvent=JSON.parse(t);submitted=true;marks.hidden=true;setMarks(false);CH=[];PIN=false;showStatus(lastEvent);requestId=null;notes=[];document.querySelectorAll('[data-rv-note]').forEach(function(x){x.removeAttribute('data-rv-note')});
-    document.querySelectorAll('mark[data-rv-mark]').forEach(function(m){m.replaceWith(document.createTextNode(m.textContent))});pins.forEach(function(p){p.remove()});pins.clear();orig.forEach(function(v,el){orig.set(el,el.innerText)});dirty=false;btn.disabled=true;finVis()}).catch(function(e){st.textContent='제출 확인 실패 · 입력 보존됨: '+e}).finally(function(){ok.disabled=fin.disabled=false})}
+    document.querySelectorAll('mark[data-rv-mark]').forEach(function(m){m.replaceWith(document.createTextNode(m.textContent))});pins.forEach(function(p){p.remove()});pins.clear();orig.forEach(function(v,el){orig.set(el,el.innerText)});dirty=false;btn.disabled=true;finVis()}).catch(function(e){st.textContent='제출 확인 실패 · 입력 보존됨: '+e}).finally(function(){busyOff(__t0)})}
 ok.addEventListener('click',function(){submit(ok,false)});
 fin.addEventListener('click',function(){submit(fin,true)});
 function finVis(){fin.hidden=notes.length>0}   // 댓글이 있으면 '마무리'가 아니다 — 제출만 남긴다

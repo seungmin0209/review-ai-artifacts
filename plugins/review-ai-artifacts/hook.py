@@ -85,9 +85,9 @@ def serving(doc):
         except Exception: continue
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{p}/health", timeout=0.3) as r:
-                return p, json.load(r).get("owner")
-        except Exception: return p, None
-    return None, None
+                h = json.load(r); return p, h.get("owner"), bool(h.get("watched"))
+        except Exception: return p, None, False
+    return None, None, False
 
 HTML_RE = re.compile(r"""(?<![\w./-])((?:~|\.{1,2})?/?[^\s'"`;|&<>()]*?\.(?:html?|md|markdown))(?=$|[\s'"`;|&<>)])""", re.I)
 def candidates_from_command(cmd, cwd):
@@ -169,11 +169,17 @@ def instruct(event, doc, cfg, agent, sid):
         emit(event, f"{lead} 발동 방식이 ask 다. 사용자에게 \"'{doc.name}' 을 편집·댓글 화면으로 띄울까요?\" 한 줄만 물어라. 예라고 하면 `{PY} \"{rv}\" \"{doc}\" --agent {agent}` 를 백그라운드로 띄우고 이벤트 파일을 지켜본다. 규약: {skill}")
     if mode == "cases":
         emit(event, f"{lead} 발동 방식이 cases={cfg.get('cases')} 다. '{doc.name}' 이 그 경우에 해당하면 `{PY} \"{rv}\" \"{doc}\" --agent {agent}` 를 백그라운드로 띄우고 이벤트 파일을 지켜본다. 아니면 띄우지 않는다. 규약: {skill}")
-    port, owner = serving(doc)
-    if port and owner and owner != sid:   # 다른 세션이 맡은 문서 — 서버도 제출 신호도 건드리지 않는다
-        emit(event, f"{lead} '{doc.name}' 은 이미 **다른 세션**({owner})이 http://localhost:{port}/ 에서 검토 중이다. "
-             f"그 서버를 재시작하거나 `--close` 하지 말고, 그 문서의 제출 이벤트도 처리하지 마라 — 제출은 그 세션으로 간다. "
-             f"사용자가 이 세션에서 이어받기를 원하면 먼저 확인을 받아라. 규약: {skill}")
+    port, owner, alive = serving(doc)
+    if port and owner and owner != sid:   # 주인이 남이다 — 다만 살아 있는지부터 본다
+        if alive:   # 지금 지켜보는 중 — 서버도 제출 신호도 건드리지 않는다
+            emit(event, f"{lead} '{doc.name}' 은 이미 **다른 세션**({owner})이 http://localhost:{port}/ 에서 지켜보는 중이다. "
+                 f"그 서버를 재시작하거나 `--close` 하지 말고, 그 문서의 제출 이벤트도 처리하지 마라 — 제출은 그 세션으로 간다. "
+                 f"이 세션도 함께 봐야 하면 아래 Monitor 를 그대로 걸어라(둘 다 명단에 올라 사용자가 선택칸에서 고른다). "
+                 f"단독으로 빼앗아야 할 때만 사용자 확인을 받아라. 규약: {skill}")
+        else:       # 주인이 끊겼다 — 이대로 두면 사용자는 버튼이 전부 회색인 화면을 본다
+            emit(event, f"{lead} '{doc.name}' 의 서버는 http://localhost:{port}/ 에 떠 있으나 주인 세션({owner})이 **끊겨 있다**. "
+                 f"물러서지 말고 **지금 바로 아래 Monitor 를 걸어 이어받아라** — 걸지 않으면 사용자는 회색(감시 꺼짐) 화면을 보고 제출이 유실된다. "
+                 f"heartbeat 는 듣기 시작하는 것일 뿐이라 `--close` 도 재시작도 필요 없다. 규약: {skill}")
     port = port or launch(doc, agent, sid, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     emit(event, f"{lead} '{doc.name}' 을 편집·댓글 화면으로 띄웠다: http://localhost:{port}/ . 사용자에게 이 주소와 \"이중클릭으로 고치고 우클릭으로 댓글, 끝나면 [검토 제출]\" 을 한 줄로 알려라. "
          f"**지금 바로 Monitor 를 걸어라(Claude Code)** — 걸지 않으면 사용자가 제출해도 이 세션은 깨어나지 않는다. 다른 세션의 제출은 owner 필터로 걸러진다. label 은 이 세션을 알아볼 이름으로 바꿔도 된다 — fork 로 갈라져 둘이 함께 지켜보면 화면에 이 이름이 제출 대상 선택칸으로 뜬다. timeout_ms 는 도구 상한인 1800000(30분) — **만료 알림이 오면 다른 일보다 먼저 같은 명령으로 다시 건다.** 시작할 때 밀린 제출을 먼저 알리므로 공백에 들어온 것도 잡힌다:\n"
