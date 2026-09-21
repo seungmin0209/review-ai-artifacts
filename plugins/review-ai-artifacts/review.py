@@ -149,9 +149,13 @@ if ALREADY:
     import urllib.request
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/health", timeout=2) as r: health = json.load(r)
-        if health.get("owner") and health.get("owner") != OWNER:   # 다른 세션이 이 문서를 맡고 있다 — 신호를 가로채지 않는다
-            print(f"주의: 이 문서는 다른 세션({health['owner']})이 검토 중입니다. 제출은 그 세션으로 갑니다. "
-                  f"이 세션이 이어받아야 하면 사용자에게 확인한 뒤 --close 로 내리고 다시 띄우세요.", flush=True)
+        if health.get("owner") and health.get("owner") != OWNER:   # 다른 세션이 이 문서를 맡고 있다
+            if health.get("watched"):   # 그 세션이 살아 있다 — 신호를 가로채지 않는다
+                print(f"주의: 이 문서는 다른 세션({health['owner']})이 지금 지켜보고 있습니다. 빼앗지 말고 heartbeat 를 함께 보내세요 "
+                      f"(/watch?session=&label=). 둘 다 명단에 오르면 화면에 제출 대상 선택칸이 떠서 사용자가 고릅니다.", flush=True)
+            else:   # 주인이 끊겨 있다 — 이대로 두면 사용자는 회색(감시 꺼짐) 화면을 본다
+                print(f"이어받기: 이전 주인({health['owner']})은 끊겨 있습니다. **지금 바로 heartbeat 를 보내세요** "
+                      f"(/watch?session=&label=). 그러면 버튼 색이 돌아오고 제출이 이 세션으로 옵니다. --close 는 필요 없습니다.", flush=True)
         if health.get("thread_id") != THREAD or health.get("version", 0) < 2:
             print("주의: 기존 서버의 전달 연결이 현재 세션과 다릅니다. /doc와 PID 확인 후 해당 서버만 재시작하세요.", flush=True)
     except Exception:
@@ -532,7 +536,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if ok and not self.path.startswith("/watch"): LAST[0] = time.time()   # 감시 heartbeat 는 "사람이 보고 있다" 가 아니다 — 이걸 세면 유휴 자동 종료가 영원히 오지 않는다
         return ok
     def do_GET(self):
-        if self.path == "/health": return reply(self, 200, json.dumps({"version":3,"doc":str(DOC),"owner":OWNER,"owner_label":OWNER_LABEL,"thread_id":THREAD,"automatic":bool(THREAD and CODEX)}), "application/json")
+        if self.path == "/health": return reply(self, 200, json.dumps({"version":3,"doc":str(DOC),"owner":OWNER,"owner_label":OWNER_LABEL,"thread_id":THREAD,"automatic":bool(THREAD and CODEX),"watched":watched()}), "application/json")
         if self.path == "/status":
             st_ = review_events.status(EVENTS, DOC, THREAD if CODEX else None, OWNER); st_["watched"] = watched(); st_["listeners"] = listeners()
             return reply(self, 200, json.dumps(st_, ensure_ascii=False), "application/json")

@@ -1,1 +1,1 @@
-{ "name": "review-ai-artifacts", "description": "Edit & Tell <Agent> what to do — AI 가 만든 HTML 을 브라우저에서 이중클릭으로 고치고 우클릭 댓글로 에이전트에게 다시 시킨다. .html 저장마다 자동 발동(훅 포함).", "version": "2026.09.21.35cc135", "author": { "name": "Seungmin Song" } }
+{ "name": "review-ai-artifacts", "description": "Edit & Tell <Agent> what to do — AI 가 만든 HTML 을 브라우저에서 이중클릭으로 고치고 우클릭 댓글로 에이전트에게 다시 시킨다. .html 저장마다 자동 발동(훅 포함).", "version": "2026.09.21.c7b16f7", "author": { "name": "Seungmin Song" } }
