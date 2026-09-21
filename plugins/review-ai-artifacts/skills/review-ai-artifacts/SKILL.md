@@ -29,6 +29,13 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 - Codex 는 프로젝트 `AGENTS.md` 에, Gemini CLI 는 `GEMINI.md` 에 "HTML 산출물은 <경로>/SKILL.md 규약(review-ai-artifacts)으로 띄운다" 한 줄.
 - 실행 명령은 Mac/Linux `python3`, Windows `python`. 설정은 `~/.config/review-ai-artifacts/config.json` 하나.
 
+## 자동 업데이트
+
+훅이 하루에 한 번 GitHub 의 `plugin.json` 버전을 읽어 설치본보다 새 판이면 문맥에 한 줄을 넣는다.
+**묻지 말고** `claude plugin update review-ai-artifacts@review-ai-artifacts` 를 실행한 뒤 사용자에게 올렸다는 한 줄만 알린다(실패하면 실패를 알린다).
+플러그인 설치(`CLAUDE_PLUGIN_ROOT`)일 때만 동작하고, 2초 타임아웃에 실패하면 조용히 넘어간다. 설정의 `update_check: false` 로 끈다.
+이것이 이 도구가 바깥으로 내보내는 유일한 요청이며, 보내는 정보는 없다.
+
 ## Claude Code 자동 발동 훅
 
 플러그인(`hooks/hooks.json`) 또는 `install.sh`/`install.ps1`(`~/.claude/settings.json`) 이 `hook.py` 를 두 이벤트에 건다.

@@ -18,6 +18,7 @@ def nfc(s): return unicodedata.normalize("NFC", str(s))   # macOS 는 한글 파
 HERE = pathlib.Path(__file__).resolve().parent
 CFG_DIR = pathlib.Path.home() / ".config" / "review-ai-artifacts"
 CONFIG, STATE = CFG_DIR / "config.json", CFG_DIR / "state.json"
+UPD = [""]   # 이번 실행에서 붙일 업데이트 안내 (없으면 빈 문자열)
 PY = sys.executable or "python3"
 RECENT = 60          # Bash 경로 후보의 mtime 허용(초)
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".next", ".cache", ".agents", ".claude", ".codex", "memory", "handoffs"}
@@ -29,7 +30,32 @@ def is_artifact(p):
     if n.endswith((".md", ".markdown")) and (n in SKIP_MD or n.startswith(("status", "handoff", "_"))): return False
     return not any(part in SKIP_DIRS for part in p.parts)
 
+RAW = "https://raw.githubusercontent.com/seungmin0209/review-ai-artifacts/main/plugins/review-ai-artifacts/.claude-plugin/plugin.json"
+
+def update_line(cfg):
+    """하루 한 번만. 실패하면 조용히 넘어간다 — 훅이 느려지거나 막히면 안 된다."""
+    if cfg.get("update_check") is False: return ""
+    root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if not root: return ""                                  # 플러그인 설치가 아니면 올릴 대상이 없다
+    here = pathlib.Path(root) / ".claude-plugin" / "plugin.json"
+    mine = load_json(here, {}).get("version")
+    if not mine: return ""
+    if time.time() - float(cfg.get("update_checked_at") or 0) < 86400: return ""
+    cfg["update_checked_at"] = time.time()
+    try:
+        CFG_DIR.mkdir(parents=True, exist_ok=True); CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception: pass
+    try:
+        import urllib.request
+        with urllib.request.urlopen(RAW, timeout=2) as r: latest = json.load(r).get("version")
+    except Exception: return ""                             # 네트워크가 없거나 느리면 없던 일로
+    if not latest or str(latest) <= str(mine): return ""    # 버전은 날짜.해시라 문자열 비교로 새 판이 크다
+    return (f"\n[review-ai-artifacts] 새 판이 있다 ({mine} → {latest}). "
+            f"`claude plugin update review-ai-artifacts@review-ai-artifacts` 를 실행해 올리고, "
+            f"사용자에게는 올렸다는 한 줄만 알려라(묻지 않는다). 실패하면 그 사실을 알린다.")
+
 def emit(event, ctx):
+    ctx = ctx + UPD[0]
     if event == "Stop":
         print(json.dumps({"decision": "block", "reason": ctx}))
     else:
@@ -193,6 +219,7 @@ def main():
     sid = ev.get("session_id") or "nosession"; cwd = ev.get("cwd") or os.getcwd()
     cfg = config(); agent = os.environ.get("HTML_WITH_AI_AGENT") or ("Codex" if os.environ.get("CODEX_THREAD_ID") else None) or cfg.get("agent") or "Claude"
     sess = session_start(sid)
+    UPD[0] = update_line(cfg)
     if event == "Stop":
         if ev.get("stop_hook_active"): sys.exit(0)
         roots = sess.get("dirs") or []          # 이 세션이 건드린 적 없는 폴더는 보지 않는다 — 다른 세션 산출물 침범 방지

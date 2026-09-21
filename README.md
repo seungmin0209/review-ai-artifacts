@@ -36,6 +36,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1   # Windows  — winget 으
 python3 review.py <문서.html> --agent Codex            # Windows 는 python. http://localhost:8901
 ```
 
+**업데이트는 알아서 된다.** 하루에 한 번 새 판이 있는지 확인해, 있으면 묻지 않고 올린 뒤 올렸다는 한 줄만 알린다. 바깥으로 나가는 요청은 이 버전 확인 하나뿐이고 보내는 정보는 없다 — 공개된 `plugin.json` 을 읽기만 한다. 끄려면 "업데이트 확인 꺼줘"(설정의 `update_check: false`).
+
 파이썬 3 외 의존성은 없다. 에이전트가 설치 스크립트를 대신 실행해도 된다. `~/.claude` 쓰기가 막힌 환경이면 zip 을 풀어 넣는 한 줄만 직접 실행한다
 (Mac `unzip ~/Downloads/review-ai-artifacts.zip -d ~/.claude/skills/` · Windows `Expand-Archive "$HOME\Downloads\review-ai-artifacts.zip" -DestinationPath "$HOME\.claude\skills\" -Force`).
 

@@ -466,7 +466,9 @@ document.addEventListener('mouseover',function(e){
   if(TIP&&TIP.__for===el)return;
   tipFor(el)});
 showChanges();
-setInterval(function(){if(STALE||ok.disabled)return;fetch('/status').then(function(r){return r.json()}).then(function(r){setWatched(r.watched);setListeners(r.listeners);if(r.id||r.pending_count){lastEvent=r;showStatus(r)}}).catch(function(){})},2000);
+var CHREV=null;
+setInterval(function(){if(STALE||ok.disabled)return;fetch('/status').then(function(r){return r.json()}).then(function(r){setWatched(r.watched);setListeners(r.listeners);if(CHREV===null){CHREV=r.chg_rev}else if(r.chg_rev!==CHREV){CHREV=r.chg_rev;showChanges()}   // 반영이 새로 기록됐다 — 문서가 그대로여도 변경 표시는 갱신해야 한다
+if(r.id||r.pending_count){lastEvent=r;showStatus(r)}}).catch(function(){})},2000);
 var MT=__MTIME__;setInterval(function(){fetch('/mtime').then(function(r){return r.text()}).then(function(m){if(m===MT)return;
   if(dirty||notes.length||(document.activeElement&&document.activeElement.isContentEditable)){
     STALE=true;fresh.hidden=false;
@@ -576,6 +578,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/health": return reply(self, 200, json.dumps({"version":3,"doc":str(DOC),"owner":OWNER,"owner_label":OWNER_LABEL,"thread_id":THREAD,"automatic":bool(THREAD and CODEX),"watched":watched()}), "application/json")
         if self.path == "/status":
             st_ = review_events.status(EVENTS, DOC, THREAD if CODEX else None, OWNER); st_["watched"] = watched(); st_["listeners"] = listeners()
+            chg = [r for r in review_events.read(EVENTS) if r.get("doc") == str(DOC) and r.get("changes")]
+            st_["chg_rev"] = (chg[-1].get("id") or "") + ":" + str(len(chg[-1]["changes"])) if chg else ""   # 마지막 반영의 id+건수. 바뀌면 화면이 변경 목록을 다시 받는다
             return reply(self, 200, json.dumps(st_, ensure_ascii=False), "application/json")
         if self.path.startswith("/mtime"): return reply(self, 200, str(DOC.stat().st_mtime_ns))
         if self.path == "/changes":   # 가장 최근 반영의 변경 표시
