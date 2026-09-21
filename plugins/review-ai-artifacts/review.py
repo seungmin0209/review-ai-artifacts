@@ -215,7 +215,8 @@ function ours(el){return el.closest('#__rv_bar,#__rv_pop,.__rv_pin')}
 var VOID={IMG:1,SVG:1,BR:1,HR:1,INPUT:1,VIDEO:1,CANVAS:1,PICTURE:1,SOURCE:1};
 function hasText(el){if(Array.from(el.childNodes).some(function(n){return n.nodeType===3&&n.textContent.trim()}))return true;
   return el.children.length===0&&!VOID[el.tagName]&&(orig.has(el)||el.isContentEditable||/^(H[1-6]|P|LI|TD|TH|SPAN|B|EM|STRONG|SMALL|FIGCAPTION|SUMMARY|LABEL|A|CODE)$/.test(el.tagName))}  // 글자를 다 지운 요소도 다시 잡힌다
-function mediaTarget(e){var m=e.target.closest('img,svg,video,canvas,picture,figure');return (m&&!ours(m))?m:null}
+function mediaTarget(e){var m=e.target.closest('img,svg,video,canvas,picture,figure');if(!m||ours(m))return null;
+  var b=m.closest('button,a,[role=button]');return (b&&!ours(b)&&!b.contains(document.getElementById('__rv_pop')))?b:m}   // 버튼·링크 속 아이콘은 그 버튼을 대상으로 올린다. 이름이 버튼 쪽에 붙어 있다
 function target(e){var t=e.target;if(!(t instanceof Element)||ours(t))return null;   // 글자를 직접 품은 가장 가까운 요소 — 태그 종류를 가리지 않는다
   while(t&&t!==document.body&&t!==document.documentElement){if(hasText(t))return t;t=t.parentElement}return null}
 function path(el){var p=[];while(el&&el!==document.body){var s=el.tagName.toLowerCase();if(el.id){p.unshift(s+'#'+(window.CSS&&CSS.escape?CSS.escape(el.id):el.id));break}
@@ -241,12 +242,26 @@ document.addEventListener('contextmenu',function(e){var t=target(e)||mediaTarget
   var sel=window.getSelection(),quote='',range=null;
   if(sel&&!sel.isCollapsed&&t.contains(sel.anchorNode)&&sel.toString().trim()){quote=sel.toString().trim();range=sel.getRangeAt(0).cloneRange()}
   openPop(t,quote,range,e.pageX,e.pageY)});
+function aname(el){   // 글자가 없는 요소의 이름은 aria-label·title·alt 에 들어 있다. 자기 자신을 먼저 보고 없으면 자손에서 찾는다
+  var a=el.getAttribute('aria-label')||el.getAttribute('title')||el.getAttribute('alt')||'';
+  if(!a.trim()){var t=el.querySelector('title');if(t)a=t.textContent||''}
+  if(!a.trim()){var d=el.querySelector('[aria-label],[title],img[alt]');
+    if(d)a=d.getAttribute('aria-label')||d.getAttribute('title')||d.getAttribute('alt')||''}
+  if(!a.trim()){var f=el.closest('figure'),cap=f&&f.querySelector('figcaption');if(cap)a=cap.textContent||''}
+  return a.replace(/\s+/g,' ').trim().slice(0,120)}
+function gkind(el){   // svg 는 대부분 아이콘이다. 그래프라고 부르려면 크기와 자리가 받쳐줘야 한다
+  if(el.closest('button,a,[role=button],nav,header,footer'))return '아이콘';
+  var r=el.getBoundingClientRect();return (r.width>=160&&r.height>=100)?'그래프':'아이콘'}
+var KIND={img:'이미지',picture:'이미지',video:'영상',canvas:'그래프',figure:'그림',button:'버튼',a:'링크',summary:'접기',label:'입력칸'};
 function label(el){var tag=el.tagName.toLowerCase();   // 인라인 SVG 의 tagName 은 소문자라 대문자 비교로는 빗나간다
   if(tag==='img')return '[이미지] '+(el.alt||el.getAttribute('src')||'').slice(0,120);
-  if(/^(svg|video|canvas|picture)$/.test(tag)){var ttl=el.getAttribute('aria-label')||(el.querySelector('title')||{textContent:''}).textContent||'';if(!ttl.trim()){var f=el.closest('figure'),cap=f&&f.querySelector('figcaption');ttl=cap?cap.textContent:''}return ('['+(tag==='svg'?'그래프':tag)+'] '+ttl.replace(/\s+/g,' ').trim().slice(0,120)).trim()}
+  if(/^(svg|video|canvas|picture)$/.test(tag))return ('['+(tag==='svg'?gkind(el):KIND[tag])+'] '+aname(el)).trim();
   if(tag==='figure'){var c=el.querySelector('figcaption');return '[그림] '+(c?c.textContent.replace(/\s+/g,' ').trim().slice(0,120):'')}
   var c=el.cloneNode(true);c.querySelectorAll('svg,script,style,canvas').forEach(function(x){x.remove()});c.querySelectorAll('p,div,h1,h2,h3,h4,h5,h6,li,tr,td,th,br,figcaption').forEach(function(x){x.insertAdjacentText('afterend',' ')});var s=c.textContent.replace(/\s+/g,' ').trim();
-  if(!s&&el.querySelector('svg,canvas'))return '[그래프] '+(el.querySelector('figcaption,h1,h2,h3,h4')||{textContent:''}).textContent.replace(/\s+/g,' ').trim().slice(0,120);
+  if(!s){var g=el.querySelector('svg,canvas'),   // 글자가 없으면 무엇인지부터 밝힌다. svg 가 들었다는 이유만으로 그래프라 부르지 않는다
+      k=KIND[tag]||(el.getAttribute('role')==='button'?'버튼':'')||(g?(g.tagName.toLowerCase()==='canvas'?'그래프':gkind(g)):''),
+      n=aname(el)||(el.querySelector('figcaption,h1,h2,h3,h4')||{textContent:''}).textContent.replace(/\s+/g,' ').trim().slice(0,120);
+    if(k||n)return ('['+(k||'요소')+'] '+n).trim()}
   return s.slice(0,160)}
 function openPop(t,quote,range,x,y){closePop();if(t)t.setAttribute('data-rv-target','');var d=document.createElement('div');d.id='__rv_pop';
   d.style.left=Math.max(8,Math.min(x,window.innerWidth-580+window.scrollX))+'px';d.style.top=(y+10)+'px';
