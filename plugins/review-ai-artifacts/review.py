@@ -185,7 +185,7 @@ mark[data-rv-mark]{background:rgba(128,140,160,.35);color:inherit;border-radius:
   padding:9px 18px;background:#1f1f1f;color:#d4d4d4;font:13px/1.4 -apple-system,system-ui,sans-serif;border-bottom:1px solid #333}
 body{padding-top:50px!important}
 #__rv_bar b{color:#fff;margin-right:6px;letter-spacing:-.2px}#__rv_bar button{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid #3a3a3a;background:#2b2b2b;color:#e8e8e8;cursor:pointer}
-#__rv_bar button.pri{background:#c96442;border-color:#c96442;color:#fff;font-weight:600}#__rv_bar button.pri.off,#__rv_bar button.fin.off{background:#4a4a4a;border-color:#5a5a5a;color:#bdbdbd}#__rv_bar .warn{color:#f0c040}#__rv_bar button.fin{background:#1f8a4c;border-color:#1f8a4c;color:#fff;font-weight:600}#__rv_bar #__rv_marks.on{border-color:#e0a000;color:#f0c040}#__rv_bar button.pri.busy,#__rv_bar button.fin.busy{background:#4a4a4a;border-color:#5a5a5a;color:#bdbdbd}#__rv_bar button:disabled{opacity:.45;cursor:default}#__rv_bar .st{color:#8a8a8a}#__rv_bar .hint{margin-left:auto;color:#8a8a8a;text-align:right}
+#__rv_bar button.pri{background:#c96442;border-color:#c96442;color:#fff;font-weight:600}#__rv_bar button.pri.off,#__rv_bar button.fin.off{background:#4a4a4a;border-color:#5a5a5a;color:#bdbdbd}#__rv_bar .warn{color:#f0c040}#__rv_bar button.fin{background:#1f8a4c;border-color:#1f8a4c;color:#fff;font-weight:600}#__rv_bar #__rv_marks.on{border-color:#e0a000;color:#f0c040}#__rv_bar button.pri.busy,#__rv_bar button.fin.busy{background:#4a4a4a;border-color:#5a5a5a;color:#bdbdbd}#__rv_bar button:disabled{opacity:.45;cursor:default}#__rv_nav{display:inline-flex;align-items:center;gap:2px;margin-left:2px}#__rv_nav button{min-width:26px;padding:3px 6px;line-height:1}#__rv_nav .idx{color:#bdbdbd;font-size:12px;padding:0 4px;min-width:42px;text-align:center}[data-rv-changed][data-rv-cur]{outline-width:3px;background:rgba(224,160,0,.18);scroll-margin:120px}#__rv_bar .st{color:#8a8a8a}#__rv_bar .hint{margin-left:auto;color:#8a8a8a;text-align:right}
 #__rv_pop{position:absolute;z-index:100000;color-scheme:dark;background:#2b2b2b;color:#ececec;border:1px solid #3d3d3d;border-radius:16px;padding:18px 22px 16px;
   box-shadow:0 12px 40px rgba(0,0,0,.45);width:560px;max-width:calc(100vw - 32px);font:15px/1.5 -apple-system,system-ui,"Apple SD Gothic Neo",sans-serif}
 /* 문서 쪽 CSS(overflow-wrap:anywhere, word-break, writing-mode 등)가 새어 들어와 글자가 한 자씩 세로로 끊기는 것을 막는다 */
@@ -213,7 +213,7 @@ body{padding-top:50px!important}
 @media print{#__rv_bar,#__rv_css,#__rv_pop,.__rv_pin{display:none}body{padding-top:0!important}}
 </style>
 <div id="__rv_bar"><b>Edit &amp; Tell __AGENT__ what to do</b>
-<button id="__rv_whole">종합댓글달기</button><button id="__rv_save" hidden disabled>저장</button><button id="__rv_fin" class="fin" title="더 고칠 것 없음 — 수정이 있으면 반영 확인만 받고 이 검토를 끝낸다">마무리</button><button id="__rv_ok" class="pri">진행중인 __AGENT__ Session에 제출</button><button id="__rv_copy" hidden>전달 요청 복사</button><button id="__rv_fresh" hidden>새 판 불러오기</button><button id="__rv_marks" hidden title="커서를 올리면 고친 곳이 노란 테두리로 보이고, 누르면 고정됩니다">변경사항 확인</button><span class="st" id="__rv_st" role="status" aria-live="polite">__DELIVERY_LABEL__</span><span class="hint">이중클릭하여 직접 편집. 우클릭하여 현 __AGENT__ Session에게 Comment</span></div>
+<button id="__rv_whole">종합댓글달기</button><button id="__rv_save" hidden disabled>저장</button><button id="__rv_fin" class="fin" title="더 고칠 것 없음 — 수정이 있으면 반영 확인만 받고 이 검토를 끝낸다">마무리</button><button id="__rv_ok" class="pri">진행중인 __AGENT__ Session에 제출</button><button id="__rv_copy" hidden>전달 요청 복사</button><button id="__rv_fresh" hidden>새 판 불러오기</button><button id="__rv_marks" hidden title="커서를 올리면 고친 곳이 노란 테두리로 보이고, 누르면 고정됩니다">변경사항 확인</button><span id="__rv_nav" hidden><button id="__rv_prev" title="이전 변경 (Shift+Enter)">&#8743;</button><span class="idx" id="__rv_idx"></span><button id="__rv_next" title="다음 변경 (Enter)">&#8744;</button></span><span class="st" id="__rv_st" role="status" aria-live="polite">__DELIVERY_LABEL__</span><span class="hint">이중클릭하여 직접 편집. 우클릭하여 현 __AGENT__ Session에게 Comment</span></div>
 <script id="__rv_js">
 (function(){
 Array.from(document.body.children).forEach(function(x){if(String(x.id||'').indexOf('__rv_')!==0)x.setAttribute('data-rv-orig','')});   // 편집기 요소는 제외 — 표식이 붙으면 저장 때 걸러지지 않는다
@@ -417,23 +417,54 @@ function showChanges(){fetch('/changes').then(function(r){return r.json()}).then
   list.forEach(function(c){var el=null;try{el=c.path?document.querySelector(c.path):null}catch(e){}
     if(!el||ours(el)){miss++;return}
     el.__rvWhat=c;CH.push(el)});
-  marks.hidden=!CH.length;marks.textContent='변경사항 확인 ('+CH.length+(miss?' · 못 찾음 '+miss:'')+')';marks.classList.remove('on')}).catch(function(){})}
-marks.addEventListener('mouseenter',function(){setMarks(true)});
+  marks.hidden=!CH.length;marks.textContent='변경사항 확인 ('+CH.length+(miss?' · 못 찾음 '+miss:'')+')';marks.classList.remove('on');PIN=false;CUR=-1;navShow(false);tipOff()}).catch(function(){})}
+var nav=document.getElementById('__rv_nav'),navPrev=document.getElementById('__rv_prev'),
+    navNext=document.getElementById('__rv_next'),navIdx=document.getElementById('__rv_idx'),CUR=-1;
+function navShow(on){   // 화살표는 갈 곳이 둘 이상일 때만 — 한 곳뿐이면 데려다주기만 한다
+  nav.hidden=!(on&&CH.length);
+  navPrev.hidden=navNext.hidden=(CH.length<2);
+  navIdx.textContent=CH.length>1?((CUR+1)+' / '+CH.length):''}
+function goTo(i){   // 끝에서 처음으로 돈다 — Chrome 찾기와 같게
+  if(!CH.length)return;
+  if(CUR>=0&&CH[CUR])CH[CUR].removeAttribute('data-rv-cur');
+  CUR=((i%CH.length)+CH.length)%CH.length;
+  var el=CH[CUR];el.setAttribute('data-rv-cur','');
+  el.scrollIntoView({block:'center',behavior:'smooth'});
+  navShow(PIN);
+  afterScroll(function(){if(PIN&&CH[CUR]===el)tipFor(el)})}   // 멎은 뒤에 붙인다 — 움직이는 중에 붙이면 엉뚱한 자리에 남는다
+function afterScroll(cb){   // scrollend 가 없는 브라우저도 있으므로 멈춤을 직접 본다
+  var last=window.scrollY,still=0,n=0;
+  var t=setInterval(function(){
+    if(window.scrollY===last){if(++still>=2){clearInterval(t);cb();return}}else{still=0;last=window.scrollY}
+    if(++n>40){clearInterval(t);cb()}   // 2초면 끊는다
+  },50)}
+marks.addEventListener('mouseenter',function(){if(!PIN)setMarks(true)});
 marks.addEventListener('mouseleave',function(){if(!PIN)setMarks(false)});
-marks.addEventListener('click',function(){PIN=!PIN;setMarks(PIN);marks.classList.toggle('on',PIN)});
+marks.addEventListener('click',function(){PIN=!PIN;setMarks(PIN);marks.classList.toggle('on',PIN);
+  if(PIN){goTo(0)}else{if(CUR>=0&&CH[CUR])CH[CUR].removeAttribute('data-rv-cur');CUR=-1;navShow(false);tipOff()}});
+navPrev.addEventListener('click',function(e){e.stopPropagation();goTo(CUR-1)});
+navNext.addEventListener('click',function(e){e.stopPropagation();goTo(CUR+1)});
+document.addEventListener('keydown',function(e){   // 고정된 동안에만. 글을 고치는 중에는 가로채지 않는다
+  if(!PIN||e.key!=='Enter')return;
+  var a=document.activeElement;
+  if(a&&(a.isContentEditable||a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT'))return;
+  e.preventDefault();goTo(CUR+(e.shiftKey?-1:1))});
 var TIP=null;
 function tipOff(){if(TIP){TIP.remove();TIP=null}}
-document.addEventListener('mouseover',function(e){
-  var el=(e.target instanceof Element)?e.target.closest('[data-rv-changed]'):null;
-  if(!el||!el.__rvWhat){if(TIP&&!(e.target instanceof Element&&e.target.closest('[data-rv-changed]')))tipOff();return}
-  if(TIP&&TIP.__for===el)return;
+function tipFor(el){   // 마우스로도, 화살표 이동으로도 같은 말풍선을 쓴다
+  if(!el||!el.__rvWhat)return;
   tipOff();var c=el.__rvWhat;TIP=document.createElement('div');TIP.id='__rv_tip';TIP.__for=el;
   TIP.innerHTML='<b>'+(c.n?'댓글 #'+c.n+' 반영':'반영')+'</b>'+String(c.what).replace(/</g,'&lt;')+(c.why?'<i>왜 — '+String(c.why).replace(/</g,'&lt;')+'</i>':'');
   var r=el.getBoundingClientRect();   // 붙이기 전에 잰다 — 붙인 뒤 재면 툴팁 자신의 자리가 섞인다
   TIP.style.top=(r.bottom+window.scrollY+8)+'px';TIP.style.left=Math.max(8,r.left+window.scrollX)+'px';
   document.body.appendChild(TIP);
   requestAnimationFrame(function(){if(!TIP)return;var t=TIP.getBoundingClientRect();
-    if(t.right>window.innerWidth-8)TIP.style.left=Math.max(8,window.innerWidth-t.width-8+window.scrollX)+'px'})});
+    if(t.right>window.innerWidth-8)TIP.style.left=Math.max(8,window.innerWidth-t.width-8+window.scrollX)+'px'})}
+document.addEventListener('mouseover',function(e){
+  var el=(e.target instanceof Element)?e.target.closest('[data-rv-changed]'):null;
+  if(!el||!el.__rvWhat){if(TIP&&!(e.target instanceof Element&&e.target.closest('[data-rv-changed]')))tipOff();return}
+  if(TIP&&TIP.__for===el)return;
+  tipFor(el)});
 showChanges();
 setInterval(function(){if(STALE||ok.disabled)return;fetch('/status').then(function(r){return r.json()}).then(function(r){setWatched(r.watched);setListeners(r.listeners);if(r.id||r.pending_count){lastEvent=r;showStatus(r)}}).catch(function(){})},2000);
 var MT=__MTIME__;setInterval(function(){fetch('/mtime').then(function(r){return r.text()}).then(function(m){if(m===MT)return;
