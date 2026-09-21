@@ -136,7 +136,7 @@ def kill_port(port, why):
 
 PORT, ALREADY = pick_port(DOC, A.port)
 if A.close:
-    if not ALREADY: print(f"떠 있지 않음: {DOC.name}"); sys.exit(0)
+    if not ALREADY: print(f"떠 있지 않음: {DOC.name}" + ("" if A.port else " — 8901~8990 만 훑었다. --port 로 다른 자리에 띄웠다면 같은 --port 를 함께 준다")); sys.exit(0)
     import urllib.request
     try:
         with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{PORT}/quit", data=b"", method="POST"), timeout=3) as r: print(r.read().decode())
@@ -194,7 +194,10 @@ body{padding-top:50px!important}
 #__rv_pop .t{color:#8f8f8f;font-size:15px;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #__rv_pop .a{color:#a8a8a8;font-size:14px;border-left:2px solid #6b6b6b;padding-left:10px;margin-bottom:12px;max-height:44px;overflow:hidden}
 #__rv_pop .a.th{max-height:none;padding-top:2px;padding-bottom:2px}   /* 그림은 글로 설명하지 않고 실물을 축소해 보여준다 */
-#__rv_pop .a .thb{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;background:#fff;border-radius:5px;padding:5px;box-sizing:border-box;overflow:hidden}
+/* 체커보드 — 흰 아이콘도 투명 배경도 보인다. 단색 흰 바탕이면 흰 아이콘이 통째로 사라진다 */
+#__rv_pop .a .thb{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:5px;padding:5px;box-sizing:border-box;overflow:hidden;
+ background-color:#fff;background-image:linear-gradient(45deg,#dfe2e7 25%,transparent 25%),linear-gradient(-45deg,#dfe2e7 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#dfe2e7 75%),linear-gradient(-45deg,transparent 75%,#dfe2e7 75%);
+ background-size:10px 10px;background-position:0 0,0 5px,5px -5px,-5px 0}
 #__rv_pop .a .thb>*{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}
 #__rv_pop textarea{width:100%;min-height:64px;font:inherit;font-size:17px;color:#fff;background:transparent;border:0;outline:0;padding:0;resize:none;box-sizing:border-box}
 #__rv_pop textarea::placeholder{color:#6f6f6f}
@@ -275,7 +278,13 @@ function thumb(el){   // 그림·아이콘은 글로 설명하는 것보다 실�
   try{
     if(t==='img'){if(!(g.currentSrc||g.src))return null;var i=new Image();i.src=g.currentSrc||g.src;box.appendChild(i)}
     else if(t==='picture'){var s=g.querySelector('img');if(!s||!(s.currentSrc||s.src))return null;var i2=new Image();i2.src=s.currentSrc||s.src;box.appendChild(i2)}
-    else if(t==='svg'){var c=g.cloneNode(true);c.removeAttribute('width');c.removeAttribute('height');c.removeAttribute('class');c.style.width='100%';c.style.height='100%';box.appendChild(c)}
+    else if(t==='svg'){var c=g.cloneNode(true),vb=(g.getAttribute('viewBox')||'').split(/[\s,]+/).filter(Boolean),   // 비율은 viewBox 에서 읽는다 — 100% 로 늘리면 세로로 긴 그림도 정사각 상자에 눌린다
+      w=vb.length===4?parseFloat(vb[2]):(parseFloat(g.getAttribute('width'))||g.getBoundingClientRect().width),
+      h=vb.length===4?parseFloat(vb[3]):(parseFloat(g.getAttribute('height'))||g.getBoundingClientRect().height);
+      c.removeAttribute('width');c.removeAttribute('height');c.removeAttribute('class');c.removeAttribute('style');
+      if(w>0&&h>0){c.style.aspectRatio=w+'/'+h;c.style.width=(w>=h?'100%':'auto');c.style.height=(w>=h?'auto':'100%')}
+      else{c.style.width='100%';c.style.height='100%'}
+      box.appendChild(c)}
     else if(t==='canvas'){var i3=new Image();i3.src=g.toDataURL();box.appendChild(i3)}   // 교차출처로 오염된 캔버스는 여기서 예외가 난다
     else if(t==='video'){if(!g.poster)return null;var i4=new Image();i4.src=g.poster;box.appendChild(i4)}
     else return null;
