@@ -256,12 +256,12 @@ document.addEventListener('dblclick',function(e){var t=target(e);if(!t)return;e.
 },true);
 document.addEventListener('mousedown',function(e){var d=document.getElementById('__rv_pop');if(d&&!d.contains(e.target)&&!d.querySelector('textarea').value.trim())closePop()},true); // 적기 전이면 바깥 클릭으로 닫힘
 document.addEventListener('click',function(e){if(ours(e.target))return;var a=e.target.closest('a');if(a&&!e.target.isContentEditable&&!(a.getAttribute('href')||'').startsWith('#')&&!a.hasAttribute('download'))e.preventDefault()},true); // 편집 중 링크 이동 방지
-var SEL=[];   // 여러 문서 파트를 한 번에 고른 목록
-function selClear(){SEL.forEach(function(el){el.removeAttribute('data-rv-sel')});SEL=[]}
-function selToggle(el){var i=SEL.indexOf(el);
-  if(i>=0){SEL.splice(i,1);el.removeAttribute('data-rv-sel')}else{SEL.push(el);el.setAttribute('data-rv-sel','')}}
-function selAdd(el){if(SEL.indexOf(el)<0){SEL.push(el);el.setAttribute('data-rv-sel','')}}
-function selCandidates(){   // 글자를 품은 요소만. 서로 겹치면 가장 안쪽만 남긴다
+var PICK=[];   // 여러 문서 파트를 한 번에 고른 목록
+function pickClear(){PICK.forEach(function(el){el.removeAttribute('data-rv-sel')});PICK=[]}
+function pickToggle(el){var i=PICK.indexOf(el);
+  if(i>=0){PICK.splice(i,1);el.removeAttribute('data-rv-sel')}else{PICK.push(el);el.setAttribute('data-rv-sel','')}}
+function pickAdd(el){if(PICK.indexOf(el)<0){PICK.push(el);el.setAttribute('data-rv-sel','')}}
+function pickCands(){   // 글자를 품은 요소만. 서로 겹치면 가장 안쪽만 남긴다
   return Array.from(document.body.querySelectorAll('*')).filter(function(el){
     return !ours(el)&&hasText(el)&&el.getClientRects().length})}
 function hit(r,b){return !(r.right<b.left||r.left>b.right||r.bottom<b.top||r.top>b.bottom)}
@@ -271,8 +271,8 @@ document.addEventListener('click',function(e){   // Shift+클릭 = 추가·해�
   var t=target(e)||mediaTarget(e); if(!t)return;
   e.preventDefault();e.stopPropagation();
   var s=window.getSelection(); if(s)s.removeAllRanges();
-  selToggle(t);
-  st.textContent=SEL.length?SEL.length+'곳 선택됨 — 우클릭하면 한 번에 댓글을 답니다':'';
+  pickToggle(t);
+  st.textContent=PICK.length?PICK.length+'곳 선택됨 — 우클릭하면 한 번에 댓글을 답니다':'';
 },true);
 
 (function(){   // 빈 곳에서 좌클릭 드래그 = 박스 선택
@@ -296,17 +296,17 @@ document.addEventListener('click',function(e){   // Shift+클릭 = 추가·해�
     var b={left:Math.min(sx,e.pageX)-scrollX,top:Math.min(sy,e.pageY)-scrollY,
            right:Math.max(sx,e.pageX)-scrollX,bottom:Math.max(sy,e.pageY)-scrollY};
     box.remove();box=null;
-    if(!e.shiftKey)selClear();
-    var cands=selCandidates().filter(function(el){return hit(el.getBoundingClientRect(),b)});
+    if(!e.shiftKey)pickClear();
+    var cands=pickCands().filter(function(el){return hit(el.getBoundingClientRect(),b)});
     cands.filter(function(el){return !cands.some(function(o){return o!==el&&el.contains(o)})})   // 바깥 상자는 빼고 알맹이만
-         .forEach(selAdd);
-    st.textContent=SEL.length?SEL.length+'곳 선택됨 — 우클릭하면 한 번에 댓글을 답니다':'';
+         .forEach(pickAdd);
+    st.textContent=PICK.length?PICK.length+'곳 선택됨 — 우클릭하면 한 번에 댓글을 답니다':'';
   });
 })();
-document.addEventListener('keydown',function(e){if(e.key==='Escape'&&SEL.length){selClear();st.textContent=''}});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&PICK.length){pickClear();st.textContent=''}});
 
 document.addEventListener('contextmenu',function(e){var t=target(e)||mediaTarget(e);
-  if(SEL.length){e.preventDefault();return openPop(SEL[0],'',null,e.pageX,e.pageY)}   // 고른 것이 있으면 그 묶음에 단다
+  if(PICK.length){e.preventDefault();return openPop(PICK[0],'',null,e.pageX,e.pageY)}   // 고른 것이 있으면 그 묶음에 단다
   if(!t)return;e.preventDefault();
   var sel=window.getSelection(),quote='',range=null;
   if(sel&&!sel.isCollapsed&&sel.toString().trim()){
@@ -315,9 +315,9 @@ document.addEventListener('contextmenu',function(e){var t=target(e)||mediaTarget
     if(t.contains(sel.anchorNode)&&t.contains(sel.focusNode)){range=r0.cloneRange()}   // 한 요소 안이면 그 자리에 형광펜을 칠 수 있다
     else{                                                                              // 여러 요소에 걸쳤다 — 걸친 것들을 모두 고른 것으로 본다
       range=null;
-      var covered=selCandidates().filter(function(el){return r0.intersectsNode(el)});
+      var covered=pickCands().filter(function(el){return r0.intersectsNode(el)});
       covered=covered.filter(function(el){return !covered.some(function(o){return o!==el&&el.contains(o)})});
-      if(covered.length>1){selClear();covered.forEach(selAdd);t=SEL[0]}
+      if(covered.length>1){pickClear();covered.forEach(pickAdd);t=PICK[0]}
     }}
   openPop(t,quote,range,e.pageX,e.pageY)});
 function aname(el){   // 글자가 없는 요소의 이름은 aria-label·title·alt 에 들어 있다. 자기 자신을 먼저 보고 없으면 자손에서 찾는다
@@ -379,12 +379,12 @@ function openPop(t,quote,range,x,y){closePop();if(t)t.setAttribute('data-rv-targ
   ta.addEventListener('input',function(){go.disabled=!ta.value.trim();ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,240)+'px'});
   ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();go.click()}});
   go.addEventListener('click',function(){if(!ta.value.trim())return;
-    var group=(SEL.length>1&&SEL.indexOf(t)>=0)?SEL.slice():null;
+    var group=(PICK.length>1&&PICK.indexOf(t)>=0)?PICK.slice():null;
     notes.push({n:(notes.length?Math.max.apply(null,notes.map(function(x){return x.n})):0)+1,el:t,path:t?path(t):'',
       paths:group?group.map(path):null,
       anchor:group?(group.length+'곳 — '+group.map(label).join(' / ').slice(0,200)):(t?label(t):'[문서 전체]'),
       quote:quote||null,text:ta.value.trim()});
-    if(group){group.forEach(function(el){el.setAttribute('data-rv-note','');if(el!==t)pin(el)});selClear()}
+    if(group){group.forEach(function(el){el.setAttribute('data-rv-note','');if(el!==t)pin(el)});pickClear()}
     if(range){try{var m=document.createElement('mark');m.setAttribute('data-rv-mark','');range.surroundContents(m)}catch(err){}}
     if(t){t.setAttribute('data-rv-note','');pin(t)}closePop();finVis();st.textContent='댓글 '+notes.length+'개 (제출 전)'})}
 var pins=new Map();   // 요소 → 마커
