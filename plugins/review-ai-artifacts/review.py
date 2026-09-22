@@ -171,6 +171,7 @@ UI = r"""
 [data-rv-target]{outline:2px solid #d97706!important;outline-offset:2px}
 [contenteditable="plaintext-only"]{outline:2px solid #2f6bdc;outline-offset:2px;background:rgba(47,107,220,.06)}
 [data-rv-note]{outline:2px solid rgba(120,140,170,.6);outline-offset:2px}
+#__rv_tip .__rv_sep{border:0;border-top:1px solid rgba(255,255,255,.18);margin:8px 0}
 mark[data-rv-mark]{background:rgba(128,140,160,.35);color:inherit;border-radius:3px;padding:0 1px}
 [data-rv-changed]{outline:2px solid #e0a000;outline-offset:3px;border-radius:2px;background:rgba(224,160,0,.07)}
 #__rv_tip{position:absolute;z-index:100001;max-width:380px;background:#2b2b2b;color:#ececec;border:1px solid #e0a000;border-radius:10px;padding:10px 13px;
@@ -416,8 +417,8 @@ function showChanges(){fetch('/changes').then(function(r){return r.json()}).then
   var miss=0;
   list.forEach(function(c){var el=null;try{el=c.path?document.querySelector(c.path):null}catch(e){}
     if(!el||ours(el)){miss++;return}
-    el.__rvWhat=c;CH.push(el)});
-  marks.hidden=!CH.length;marks.textContent='변경사항 확인 ('+CH.length+(miss?' · 못 찾음 '+miss:'')+')';marks.classList.remove('on');PIN=false;CUR=-1;navShow(false);tipOff()}).catch(function(){})}
+    if(el.__rvWhat){el.__rvWhat.push(c)}else{el.__rvWhat=[c];CH.push(el)}});   // 한 요소에 여러 건이 붙을 수 있다 — 덮어쓰면 뒤엣것만 남는다
+  marks.hidden=!CH.length;var tot=CH.reduce(function(a,el){return a+el.__rvWhat.length},0);marks.textContent='변경사항 확인 ('+tot+(tot!==CH.length?' · '+CH.length+'곳':'')+(miss?' · 못 찾음 '+miss:'')+')';marks.classList.remove('on');PIN=false;CUR=-1;navShow(false);tipOff()}).catch(function(){})}
 var nav=document.getElementById('__rv_nav'),navPrev=document.getElementById('__rv_prev'),
     navNext=document.getElementById('__rv_next'),navIdx=document.getElementById('__rv_idx'),CUR=-1;
 function navShow(on){   // 화살표는 갈 곳이 둘 이상일 때만 — 한 곳뿐이면 데려다주기만 한다
@@ -453,8 +454,8 @@ var TIP=null;
 function tipOff(){if(TIP){TIP.remove();TIP=null}}
 function tipFor(el){   // 마우스로도, 화살표 이동으로도 같은 말풍선을 쓴다
   if(!el||!el.__rvWhat)return;
-  tipOff();var c=el.__rvWhat;TIP=document.createElement('div');TIP.id='__rv_tip';TIP.__for=el;
-  TIP.innerHTML='<b>'+(c.n?'댓글 #'+c.n+' 반영':'반영')+'</b>'+String(c.what).replace(/</g,'&lt;')+(c.why?'<i>왜 — '+String(c.why).replace(/</g,'&lt;')+'</i>':'');
+  tipOff();var cs=el.__rvWhat;TIP=document.createElement('div');TIP.id='__rv_tip';TIP.__for=el;
+  TIP.innerHTML=cs.map(function(c){return '<b>'+(c.n?'댓글 #'+c.n+' 반영':'반영')+'</b>'+String(c.what).replace(/</g,'&lt;')+(c.why?'<i>왜 — '+String(c.why).replace(/</g,'&lt;')+'</i>':'')}).join('<hr class="__rv_sep">');
   var r=el.getBoundingClientRect();   // 붙이기 전에 잰다 — 붙인 뒤 재면 툴팁 자신의 자리가 섞인다
   TIP.style.top=(r.bottom+window.scrollY+8)+'px';TIP.style.left=Math.max(8,r.left+window.scrollX)+'px';
   document.body.appendChild(TIP);
