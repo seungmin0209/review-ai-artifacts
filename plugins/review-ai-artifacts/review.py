@@ -173,6 +173,8 @@ UI = r"""
 [data-rv-hover]{outline:2px dashed #b45f06;outline-offset:2px;cursor:text}
 [data-rv-hover]:empty,[contenteditable]:empty{min-width:24px;min-height:1em;display:inline-block}
 [data-rv-target]{outline:2px solid #d97706!important;outline-offset:2px}
+[data-rv-sel]{outline:2px solid #2f6bdc!important;outline-offset:2px;background:rgba(47,107,220,.10)}
+#__rv_box{position:absolute;z-index:99990;border:1.5px dashed #2f6bdc;background:rgba(47,107,220,.10);pointer-events:none}
 [contenteditable="plaintext-only"]{outline:2px solid #2f6bdc;outline-offset:2px;background:rgba(47,107,220,.06)}
 [data-rv-note]{outline:2px solid rgba(120,140,170,.6);outline-offset:2px}
 #__rv_tip .__rv_sep{border:0;border-top:1px solid rgba(255,255,255,.18);margin:8px 0}
@@ -254,9 +256,69 @@ document.addEventListener('dblclick',function(e){var t=target(e);if(!t)return;e.
 },true);
 document.addEventListener('mousedown',function(e){var d=document.getElementById('__rv_pop');if(d&&!d.contains(e.target)&&!d.querySelector('textarea').value.trim())closePop()},true); // 적기 전이면 바깥 클릭으로 닫힘
 document.addEventListener('click',function(e){if(ours(e.target))return;var a=e.target.closest('a');if(a&&!e.target.isContentEditable&&!(a.getAttribute('href')||'').startsWith('#')&&!a.hasAttribute('download'))e.preventDefault()},true); // 편집 중 링크 이동 방지
-document.addEventListener('contextmenu',function(e){var t=target(e)||mediaTarget(e);if(!t)return;e.preventDefault();
+var SEL=[];   // 여러 문서 파트를 한 번에 고른 목록
+function selClear(){SEL.forEach(function(el){el.removeAttribute('data-rv-sel')});SEL=[]}
+function selToggle(el){var i=SEL.indexOf(el);
+  if(i>=0){SEL.splice(i,1);el.removeAttribute('data-rv-sel')}else{SEL.push(el);el.setAttribute('data-rv-sel','')}}
+function selAdd(el){if(SEL.indexOf(el)<0){SEL.push(el);el.setAttribute('data-rv-sel','')}}
+function selCandidates(){   // 글자를 품은 요소만. 서로 겹치면 가장 안쪽만 남긴다
+  return Array.from(document.body.querySelectorAll('*')).filter(function(el){
+    return !ours(el)&&hasText(el)&&el.getClientRects().length})}
+function hit(r,b){return !(r.right<b.left||r.left>b.right||r.bottom<b.top||r.top>b.bottom)}
+
+document.addEventListener('click',function(e){   // Shift+클릭 = 추가·해제
+  if(!e.shiftKey)return;
+  var t=target(e)||mediaTarget(e); if(!t)return;
+  e.preventDefault();e.stopPropagation();
+  var s=window.getSelection(); if(s)s.removeAllRanges();
+  selToggle(t);
+  st.textContent=SEL.length?SEL.length+'곳 선택됨 — 우클릭하면 한 번에 댓글을 답니다':'';
+},true);
+
+(function(){   // 빈 곳에서 좌클릭 드래그 = 박스 선택
+  var sx=0,sy=0,box=null,on=false;
+  document.addEventListener('mousedown',function(e){
+    if(e.button!==0||ours(e.target)||e.shiftKey)return;
+    if(target(e)||mediaTarget(e))return;            // 글자·그림 위에서는 평소대로 글자 선택
+    if(document.activeElement&&document.activeElement.isContentEditable)return;
+    sx=e.pageX;sy=e.pageY;on=true;
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!on)return;
+    var dx=Math.abs(e.pageX-sx),dy=Math.abs(e.pageY-sy);
+    if(!box){ if(dx<6&&dy<6)return; box=document.createElement('div');box.id='__rv_box';document.body.appendChild(box) }
+    box.style.left=Math.min(sx,e.pageX)+'px';box.style.top=Math.min(sy,e.pageY)+'px';
+    box.style.width=dx+'px';box.style.height=dy+'px';
+  });
+  document.addEventListener('mouseup',function(e){
+    if(!on)return; on=false;
+    if(!box)return;
+    var b={left:Math.min(sx,e.pageX)-scrollX,top:Math.min(sy,e.pageY)-scrollY,
+           right:Math.max(sx,e.pageX)-scrollX,bottom:Math.max(sy,e.pageY)-scrollY};
+    box.remove();box=null;
+    if(!e.shiftKey)selClear();
+    var cands=selCandidates().filter(function(el){return hit(el.getBoundingClientRect(),b)});
+    cands.filter(function(el){return !cands.some(function(o){return o!==el&&el.contains(o)})})   // 바깥 상자는 빼고 알맹이만
+         .forEach(selAdd);
+    st.textContent=SEL.length?SEL.length+'곳 선택됨 — 우클릭하면 한 번에 댓글을 답니다':'';
+  });
+})();
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&SEL.length){selClear();st.textContent=''}});
+
+document.addEventListener('contextmenu',function(e){var t=target(e)||mediaTarget(e);
+  if(SEL.length){e.preventDefault();return openPop(SEL[0],'',null,e.pageX,e.pageY)}   // 고른 것이 있으면 그 묶음에 단다
+  if(!t)return;e.preventDefault();
   var sel=window.getSelection(),quote='',range=null;
-  if(sel&&!sel.isCollapsed&&t.contains(sel.anchorNode)&&sel.toString().trim()){quote=sel.toString().trim();range=sel.getRangeAt(0).cloneRange()}
+  if(sel&&!sel.isCollapsed&&sel.toString().trim()){
+    quote=sel.toString().trim();
+    var r0=sel.getRangeAt(0);
+    if(t.contains(sel.anchorNode)&&t.contains(sel.focusNode)){range=r0.cloneRange()}   // 한 요소 안이면 그 자리에 형광펜을 칠 수 있다
+    else{                                                                              // 여러 요소에 걸쳤다 — 걸친 것들을 모두 고른 것으로 본다
+      range=null;
+      var covered=selCandidates().filter(function(el){return r0.intersectsNode(el)});
+      covered=covered.filter(function(el){return !covered.some(function(o){return o!==el&&el.contains(o)})});
+      if(covered.length>1){selClear();covered.forEach(selAdd);t=SEL[0]}
+    }}
   openPop(t,quote,range,e.pageX,e.pageY)});
 function aname(el){   // 글자가 없는 요소의 이름은 aria-label·title·alt 에 들어 있다. 자기 자신을 먼저 보고 없으면 자손에서 찾는다
   var a=el.getAttribute('aria-label')||el.getAttribute('title')||el.getAttribute('alt')||'';
@@ -317,7 +379,12 @@ function openPop(t,quote,range,x,y){closePop();if(t)t.setAttribute('data-rv-targ
   ta.addEventListener('input',function(){go.disabled=!ta.value.trim();ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,240)+'px'});
   ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();go.click()}});
   go.addEventListener('click',function(){if(!ta.value.trim())return;
-    notes.push({n:(notes.length?Math.max.apply(null,notes.map(function(x){return x.n})):0)+1,el:t,path:t?path(t):'',anchor:t?label(t):'[문서 전체]',quote:quote||null,text:ta.value.trim()});
+    var group=(SEL.length>1&&SEL.indexOf(t)>=0)?SEL.slice():null;
+    notes.push({n:(notes.length?Math.max.apply(null,notes.map(function(x){return x.n})):0)+1,el:t,path:t?path(t):'',
+      paths:group?group.map(path):null,
+      anchor:group?(group.length+'곳 — '+group.map(label).join(' / ').slice(0,200)):(t?label(t):'[문서 전체]'),
+      quote:quote||null,text:ta.value.trim()});
+    if(group){group.forEach(function(el){el.setAttribute('data-rv-note','');if(el!==t)pin(el)});selClear()}
     if(range){try{var m=document.createElement('mark');m.setAttribute('data-rv-mark','');range.surroundContents(m)}catch(err){}}
     if(t){t.setAttribute('data-rv-note','');pin(t)}closePop();finVis();st.textContent='댓글 '+notes.length+'개 (제출 전)'})}
 var pins=new Map();   // 요소 → 마커
@@ -370,7 +437,7 @@ function busyOff(t0){   // 응답이 더 빨라도 5초는 유지한다
   setTimeout(function(){[ok,fin].forEach(function(b){b.classList.remove('busy');if(b.dataset.rvLabel!==undefined)b.textContent=b.dataset.rvLabel});
     ok.disabled=fin.disabled=false},Math.max(0,5000-(Date.now()-t0)))}
 function submit(btnEl,final){if(btnEl.disabled)return;ok.disabled=fin.disabled=true;var __t0=busyOn();requestId=requestId||crypto.randomUUID();
-  var ev={id:requestId,final:!!final,edits:edits(),comments:notes.map(function(x){return {n:x.n,path:x.path,anchor:x.anchor,quote:x.quote,text:x.text}})};ev.approved=!!final||(!ev.edits.length&&!ev.comments.length);   // 변경·댓글 없이 제출 = 이상 없음(승인) · 마무리 = 수정이 있어도 이걸로 끝
+  var ev={id:requestId,final:!!final,edits:edits(),comments:notes.map(function(x){var c={n:x.n,path:x.path,anchor:x.anchor,quote:x.quote,text:x.text};if(x.paths&&x.paths.length>1)c.paths=x.paths;return c})};ev.approved=!!final||(!ev.edits.length&&!ev.comments.length);   // 변경·댓글 없이 제출 = 이상 없음(승인) · 마무리 = 수정이 있어도 이걸로 끝
   if(SEL)ev.to=SEL;   // 이 문서를 지켜보는 세션이 둘 이상이면(fork 쌍둥이) 고른 쪽으로만 보낸다
   ((dirty&&!ISMD)?save(false,true).catch(function(e){if(e.code===409){ev.conflict=true;return}throw e}):Promise.resolve())   // 409 = 새 판 위에 얹어 달라는 제출
   .then(function(){return post('/confirm',JSON.stringify(ev),'application/json')})
@@ -422,7 +489,10 @@ function showChanges(){fetch('/changes').then(function(r){return r.json()}).then
   list.forEach(function(c){var el=null;try{el=c.path?document.querySelector(c.path):null}catch(e){}
     if(!el||ours(el)){miss++;return}
     if(el.__rvWhat){el.__rvWhat.push(c)}else{el.__rvWhat=[c];CH.push(el)}});   // 한 요소에 여러 건이 붙을 수 있다 — 덮어쓰면 뒤엣것만 남는다
-  marks.hidden=!CH.length;var tot=CH.reduce(function(a,el){return a+el.__rvWhat.length},0);marks.textContent='변경사항 확인 ('+tot+(tot!==CH.length?' · '+CH.length+'곳':'')+(miss?' · 못 찾음 '+miss:'')+')';marks.classList.remove('on');PIN=false;CUR=-1;navShow(false);tipOff()}).catch(function(){})}
+  marks.hidden=!CH.length;var tot=CH.reduce(function(a,el){return a+el.__rvWhat.length},0);marks.textContent='변경사항 확인 ('+tot+(tot!==CH.length?' · '+CH.length+'곳':'')+(miss?' · 못 찾음 '+miss:'')+')';marks.classList.remove('on');PIN=false;CUR=-1;navShow(false);tipOff();
+  marks.title=miss?('고쳤다고 기록된 자리 '+miss+'곳을 지금 화면에서 찾지 못했습니다 — 그 부분이 지워졌거나 문서가 다시 만들어져 자리가 바뀐 경우입니다')
+                  :'커서를 올리면 고친 곳이 노란 테두리로 보이고, 누르면 고정됩니다';
+}).catch(function(){})}
 var nav=document.getElementById('__rv_nav'),navPrev=document.getElementById('__rv_prev'),
     navNext=document.getElementById('__rv_next'),navIdx=document.getElementById('__rv_idx'),CUR=-1;
 function navShow(on){   // 화살표는 갈 곳이 둘 이상일 때만 — 한 곳뿐이면 데려다주기만 한다
@@ -474,10 +544,15 @@ showChanges();
 var CHREV=null;
 setInterval(function(){if(STALE||ok.disabled)return;fetch('/status').then(function(r){return r.json()}).then(function(r){setWatched(r.watched);setListeners(r.listeners);if(CHREV===null){CHREV=r.chg_rev}else if(r.chg_rev!==CHREV){CHREV=r.chg_rev;showChanges()}   // 반영이 새로 기록됐다 — 문서가 그대로여도 변경 표시는 갱신해야 한다
 if(r.id||r.pending_count){lastEvent=r;showStatus(r)}}).catch(function(){})},2000);
+try{var __y=sessionStorage.getItem('__rv_y');if(__y!==null){sessionStorage.removeItem('__rv_y');addEventListener('load',function(){scrollTo(0,+__y)})}}catch(e){}
 var MT=__MTIME__;setInterval(function(){fetch('/mtime').then(function(r){return r.text()}).then(function(m){if(m===MT)return;
-  if(dirty||notes.length||(document.activeElement&&document.activeElement.isContentEditable)){
+  // 댓글 팝업의 textarea 는 contentEditable 이 아니라 activeElement 검사에 걸리지 않는다.
+  // 보내기 전 글은 notes 에도 없으므로, 팝업이 떠 있으면 그 자체를 작업 중으로 본다 (2026-09-22).
+  var __pop=document.getElementById('__rv_pop');
+  if(dirty||notes.length||__pop||(document.activeElement&&document.activeElement.isContentEditable)){
     STALE=true;fresh.hidden=false;
-    st.textContent='__AGENT__ 가 새 판을 올렸습니다 — 수정 중이라 불러오지 않았습니다. [제출] 하면 이 수정이 반영되고, [새 판 불러오기] 를 누르면 지금 수정은 사라집니다';return}
+    st.textContent='__AGENT__ 가 새 판을 올렸습니다 — 작업 중이라 불러오지 않았습니다. 준비되시면 [새 판 불러오기] 를 누르세요 ([제출] 하면 지금 수정도 함께 반영됩니다)';return}
+  try{sessionStorage.setItem('__rv_y',String(scrollY))}catch(e){}
   location.reload()}).catch(function(){})},2000);
 })();
 </script>
