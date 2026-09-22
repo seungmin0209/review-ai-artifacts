@@ -576,6 +576,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if ok and not self.path.startswith("/watch"): LAST[0] = time.time()   # 감시 heartbeat 는 "사람이 보고 있다" 가 아니다 — 이걸 세면 유휴 자동 종료가 영원히 오지 않는다
         return ok
     def do_GET(self):
+        if self.path.startswith("/watch"): return self.do_POST()   # GET 으로 보낸 heartbeat 도 받는다 — 404 로 조용히 흘리면 화면이 회색인 채 방치된다
         if self.path == "/health": return reply(self, 200, json.dumps({"version":3,"doc":str(DOC),"owner":OWNER,"owner_label":OWNER_LABEL,"thread_id":THREAD,"automatic":bool(THREAD and CODEX),"watched":watched()}), "application/json")
         if self.path == "/status":
             st_ = review_events.status(EVENTS, DOC, THREAD if CODEX else None, OWNER); st_["watched"] = watched(); st_["listeners"] = listeners()
