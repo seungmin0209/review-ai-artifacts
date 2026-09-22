@@ -37,6 +37,8 @@ ap.add_argument("--show-config", action="store_true")
 ap.add_argument("--set-initial", help="댓글 마커에 보일 한 글자 (예: 승)")
 ap.add_argument("--agent", help="화면에 표시할 에이전트 이름: Claude · Codex · Gemini … (기본: 환경변수로 감지, 없으면 설정값, 없으면 'AI')")
 ap.add_argument("--set-agent", help="기본 에이전트 이름을 설정에 저장")
+ap.add_argument("--theme", choices=["light", "dark", "system"], help="md 화면 테마. 생략하면 설정값, 없으면 system(운영체제 설정을 따름)")
+ap.add_argument("--set-theme", choices=["light", "dark", "system"], help="md 화면 기본 테마를 설정에 저장")
 ap.add_argument("--thread", help="Codex 제출 대상 UUID. 기본 CODEX_THREAD_ID. --agent는 표시명일 뿐 전달 경로가 아님")
 ap.add_argument("--manual", action="store_true", help="자동 전달 없이 제출 기록만 저장")
 ap.add_argument("--session", help="이 서버를 띄운 세션 ID. 제출 신호가 이 세션 것임을 표시한다. 생략하면 프로세스 고유값")
@@ -50,12 +52,14 @@ A = ap.parse_args()
 cfg = json.loads(CONFIG.read_text(encoding="utf-8")) if CONFIG.exists() else {}
 INITIAL = cfg.get("initial", "나")
 AGENT = A.agent or detect_agent() or cfg.get("agent") or "AI"
-if A.set_mode or A.show_config or A.set_initial or A.set_agent:
+THEME = A.theme or cfg.get("md_theme") or "system"
+if A.set_mode or A.show_config or A.set_initial or A.set_agent or A.set_theme:
     if A.set_mode:
         cfg.update(mode=A.set_mode, cases=[c.strip() for c in A.cases.split(",") if c.strip()], updated=datetime.date.today().isoformat())
     if A.set_initial: cfg["initial"] = A.set_initial[:1]
     if A.set_agent: cfg["agent"] = A.set_agent
-    if A.set_mode or A.set_initial or A.set_agent:
+    if A.set_theme: cfg["md_theme"] = A.set_theme
+    if A.set_mode or A.set_initial or A.set_agent or A.set_theme:
         CONFIG.parent.mkdir(parents=True, exist_ok=True); CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(cfg, ensure_ascii=False) if cfg else "설정 없음 — 첫 사용. SKILL.md 의 '처음 한 번 묻기' 절을 따른다"); sys.exit(0)
 if not A.doc: raise SystemExit("HTML 파일 경로를 준다")
@@ -479,13 +483,27 @@ var MT=__MTIME__;setInterval(function(){fetch('/mtime').then(function(r){return 
 </script>
 """
 
-MD_CSS = """<style>:root{color-scheme:light dark}body{max-width:860px;margin:40px auto;padding:0 24px 80px;font:16px/1.75 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",Pretendard,"Segoe UI",sans-serif;color:#1c2431;background:#fff;word-break:keep-all}
-@media(prefers-color-scheme:dark){body{color:#e6edf7;background:#141b26}a{color:#a9c5ff}code,pre{background:#233043}th{background:#233043}td,th{border-color:#38475c}blockquote{border-color:#38475c;color:#a8b8cb}}
+MD_BASE = """<style>:root{color-scheme:__SCHEME__}body{max-width:860px;margin:40px auto;padding:0 24px 80px;font:16px/1.75 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",Pretendard,"Segoe UI",sans-serif;color:#1c2431;background:#fff;word-break:keep-all}
 h1{font-size:32px;line-height:1.3;margin:0 0 20px}h2{font-size:24px;margin:36px 0 12px}h3{font-size:18px;margin:26px 0 8px}p{margin:0 0 14px}ul,ol{padding-left:24px;margin:0 0 14px}li+li{margin-top:4px}
 code{font:13.5px ui-monospace,Menlo,monospace;background:#eef2f7;padding:1px 5px;border-radius:4px}pre{background:#eef2f7;padding:14px 16px;border-radius:8px;overflow:auto}pre code{background:none;padding:0}
 table{border-collapse:collapse;width:100%;margin:0 0 16px;font-size:14.5px}th,td{border:1px solid #dce3ed;padding:8px 12px;text-align:left;vertical-align:top}th{background:#eaf0f8}
 blockquote{border-left:3px solid #dce3ed;margin:0 0 14px;padding:4px 16px;color:#57677c}hr{border:0;border-top:1px solid #dce3ed;margin:24px 0}img{max-width:100%}
-.mdnote{font-size:12.5px;color:#8a97a8;border-top:1px solid #dce3ed;margin-top:40px;padding-top:12px}</style>"""
+.mdnote{font-size:12.5px;color:#8a97a8;border-top:1px solid #dce3ed;margin-top:40px;padding-top:12px}__DARK__</style>"""
+
+# 다크 규칙은 반드시 기본 규칙 "뒤"에 와야 한다. 2026-09-22 이전에는 앞에 있어서
+# th/code/pre 배경이 밝은 기본값에 덮였고, 글자만 다크용(#e6edf7)이라 표 머리가 보이지 않았다.
+DARK_RULES = ("body{color:#e6edf7;background:#141b26}a{color:#a9c5ff}"
+              "code,pre{background:#233043;color:#e6edf7}th{background:#233043}"
+              "th,td{border-color:#38475c}blockquote{border-left-color:#38475c;color:#a8b8cb}"
+              ".mdnote{color:#8a97a8;border-top-color:#38475c}hr{border-top-color:#38475c}")
+
+def md_css(theme="system"):
+    """theme: light | dark | system. 설정은 config 의 md_theme, 인자로 덮어쓴다."""
+    if theme == "light":
+        return MD_BASE.replace("__SCHEME__", "light").replace("__DARK__", "")
+    if theme == "dark":
+        return MD_BASE.replace("__SCHEME__", "dark").replace("__DARK__", DARK_RULES)
+    return MD_BASE.replace("__SCHEME__", "light dark").replace("__DARK__", "@media(prefers-color-scheme:dark){" + DARK_RULES + "}")
 
 def md_to_html(md):
     """md → 보기용 HTML. 원문 복원용이 아니다 — 수정은 제출 이벤트(before/after)로 에이전트가 원문에 반영한다."""
@@ -535,7 +553,7 @@ def md_to_html(md):
         while i < len(lines) and lines[i].strip() and not re.match(r"^(#{1,6}\s|```|\||>|\s*([-*+]|\d+\.)\s|-{3,}\s*$)", lines[i]): buf.append(lines[i].strip()); i += 1
         out.append("<p>" + inl(" ".join(buf)) + "</p>")
     title = next((re.sub(r"^#\s+", "", x) for x in lines if x.startswith("# ")), DOC.name)
-    return (f'<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{H.escape(title)}</title>{MD_CSS}</head>'
+    return (f'<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{H.escape(title)}</title>{md_css(THEME)}</head>'
             f'<body>{"".join(out)}<p class="mdnote">원문 {H.escape(DOC.name)} · 마크다운을 보기용으로 렌더한 화면이다. 이중클릭 수정과 댓글은 제출 시 에이전트가 원문에 반영한다.</p></body></html>')
 
 def bump_meta(html):
@@ -588,6 +606,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             rows = [r for r in review_events.read(EVENTS) if r.get("doc") == str(DOC) and r.get("changes")]
             return reply(self, 200, json.dumps(rows[-1]["changes"] if rows else [], ensure_ascii=False), "application/json")
         if self.path.startswith("/doc"): return reply(self, 200, nfc(DOC))
+        if self.path.split("?")[0] not in ("/", "/index.html"):   # 모르는 경로에 문서를 내주면 오타 난 요청이 200 으로 성공해 보인다 — 2026-09-22 heartbeat 누락의 진짜 원인
+            return reply(self, 404, "없는 경로입니다")
         body = md_to_html(DOC.read_text(encoding="utf-8")) if IS_MD else DOC.read_text(encoding="utf-8")
         ui = (UI.replace("__INITIAL__", json.dumps(INITIAL, ensure_ascii=False)).replace("__MTIME__", json.dumps(str(DOC.stat().st_mtime_ns)))
                 .replace("__AGENT__", html_escape(AGENT)).replace("__OWNER_LABEL__", json.dumps(OWNER_LABEL, ensure_ascii=False).replace("<", "\\u003c")).replace("__DELIVERY_LABEL__", ("Codex 자동 전달 연결" if THREAD and CODEX else "자동 전달 미연결 · 제출 저장 후 대화에서 알림 필요") if AGENT.lower() == "codex" else "").replace("__DOC_JSON__", json.dumps(str(DOC), ensure_ascii=False).replace("<", "\\u003c")).replace("__ISMD__", "true" if IS_MD else "false"))
