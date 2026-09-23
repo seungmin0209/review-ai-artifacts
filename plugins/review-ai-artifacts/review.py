@@ -380,11 +380,11 @@ function openPop(t,quote,range,x,y){closePop();if(t)t.setAttribute('data-rv-targ
   ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();go.click()}});
   go.addEventListener('click',function(){if(!ta.value.trim())return;
     var group=(PICK.length>1&&PICK.indexOf(t)>=0)?PICK.slice():null;
-    notes.push({n:(notes.length?Math.max.apply(null,notes.map(function(x){return x.n})):0)+1,el:t,path:t?path(t):'',
+    notes.push({n:(notes.length?Math.max.apply(null,notes.map(function(x){return x.n})):0)+1,el:t,els:group,path:t?path(t):'',
       paths:group?group.map(path):null,
       anchor:group?(group.length+'곳 — '+group.map(label).join(' / ').slice(0,200)):(t?label(t):'[문서 전체]'),
       quote:quote||null,text:ta.value.trim()});
-    if(group){group.forEach(function(el){el.setAttribute('data-rv-note','');if(el!==t)pin(el)});pickClear()}
+    if(group){group.forEach(function(el){el.setAttribute('data-rv-note','')});pickClear()}   // 댓글 하나엔 배지 하나 — 함께 고른 요소는 테두리로만 보인다
     if(range){try{var m=document.createElement('mark');m.setAttribute('data-rv-mark','');range.surroundContents(m)}catch(err){}}
     if(t){t.setAttribute('data-rv-note','');pin(t)}closePop();finVis();st.textContent='댓글 '+notes.length+'개 (제출 전)'})}
 var pins=new Map();   // 요소 → 마커
@@ -394,6 +394,8 @@ function pin(el){var p=pins.get(el);if(!p){p=document.createElement('span');p.cl
   p.style.left=(r.left+window.scrollX-36)+'px';p.style.top=(r.top+window.scrollY+r.height/2-15)+'px';
   if(n>1)p.setAttribute('data-n',n);else p.removeAttribute('data-n');p.title='댓글 '+n+'개 — 클릭하면 보기·추가·삭제'}
 function refreshPins(){pins.forEach(function(p,el){if(!notes.some(function(x){return x.el===el})){p.remove();pins.delete(el);el.removeAttribute('data-rv-note');el.querySelectorAll('mark[data-rv-mark]').forEach(function(m){m.replaceWith(document.createTextNode(m.textContent))})}else pin(el)});
+  var keep=new Set();notes.forEach(function(x){if(x.el)keep.add(x.el);if(x.els)x.els.forEach(function(e){keep.add(e)})});   // 함께 고른 요소는 배지가 없어 위 순회에 걸리지 않는다 — 댓글을 지우면 테두리도 같이 지운다
+  document.querySelectorAll('[data-rv-note]').forEach(function(e){if(!keep.has(e))e.removeAttribute('data-rv-note')});
   finVis();st.textContent=notes.length?('댓글 '+notes.length+'개 (제출 전)'):''}
 function closePop(){var d=document.getElementById('__rv_pop');if(d)d.remove();document.querySelectorAll('[data-rv-target]').forEach(function(x){x.removeAttribute('data-rv-target')});var s=window.getSelection();if(s)s.removeAllRanges()}
 function brify(el){var w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),nodes=[];while(w.nextNode())if(w.currentNode.nodeValue.indexOf('\n')>=0)nodes.push(w.currentNode);
