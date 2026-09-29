@@ -42,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 - **PostToolUse** `Write|Edit|MultiEdit|NotebookEdit|Bash` — 파일 도구는 `file_path`, **Bash 는 명령문에서 `.html`/`.md` 경로를 뽑아** 실제로 존재하고 60초 안에 바뀐 것만 대상으로 한다
   (`cat > x.html <<EOF`, `tee`, `sed -i`, `cp`, 파이썬 스크립트 등 어떤 경로든 잡힌다).
-- **Stop** (턴 종료) — 안전망. 작업 디렉터리 아래에서 이 세션 중 바뀐 `.html` 이 아직 처리되지 않았으면 그때 발동한다. 어떤 도구로 만들었는지와 무관하다. `stop_hook_active` 면 재발동하지 않는다.
+- **Stop** (턴 종료) — 안전망. **이 세션이 PostToolUse 에서 실제로 건드린 디렉터리만** 비재귀로 훑는다(기록이 없으면 아무것도 하지 않는다). 기준 시각은 세션 시작이 아니라 마지막 도구 호출이라, 세션이 며칠 이어져도 옛 파일을 집지 않는다. 여기서 걸러진 뒤에도 ① 이 세션 대화에 파일명이 나온 적 있는지 ② 다른 세션이 이미 처리했는지 ③ 이미 누가 띄워 둔 문서인지를 확인해 남의 산출물을 배제한다. 어떤 도구로 만들었는지와는 무관하다. `stop_hook_active` 면 재발동하지 않는다.
 
 처리한 문서는 `~/.config/review-ai-artifacts/state.json` 에 세션별로 기록해 같은 문서를 두 번 띄우지 않는다. 설정 파일이 없으면 훅이 `mode: ask` 기본 파일을 만들고 첫 사용 안내를 한 번 넣는다.
 이 훅은 Claude Code용이다. Codex에서 등록됐다고 가정하지 않는다. 훅 없는 환경에서는 스킬을 읽고 직접 실행한다.
