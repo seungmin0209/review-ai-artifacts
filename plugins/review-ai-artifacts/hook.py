@@ -6,8 +6,7 @@ PostToolUse (Write|Edit|MultiEdit|NotebookEdit|Bash)
   - Bash: tool_input.command 에서 .html/.htm 경로를 뽑아, 실제로 존재하고 최근 60초 안에 바뀐 것만 대상(가장 최근 1개).
     cat > x.html <<EOF, tee, sed -i, cp, python 스크립트 등 어떤 경로든 잡힌다.
 Stop (턴 종료)
-  - 훅이 놓친 경우의 안전망. 이 세션이 PostToolUse 에서 건드린 디렉터리(state 의 dirs)만 비재귀로 훑고, 기록이 없으면 아무것도 하지 않는다.
-    기준 시각은 마지막 도구 호출이다(세션 시작이 아니다). 대화에 파일명이 나온 적 있는지 · 다른 세션이 처리했는지 · 이미 띄워 둔 문서인지로 한 번 더 걸러 남의 산출물을 배제한다.
+  - 훅이 놓친 경우의 안전망. cwd 아래에서 이 세션 시작 이후 바뀐 .html 중 아직 처리하지 않은 것이 있으면 그때 발동한다.
     stop_hook_active 면 재발동하지 않는다(무한 루프 방지).
 
 설정(mode)에 따라: always → review.py 를 직접 띄우고 알린다 · ask → "띄울까요?" 물어라 · cases → 해당하면 띄워라 · off → 침묵.
