@@ -411,7 +411,11 @@ function openPop(t,quote,range,x,y){keepDraft();closePop();if(t)t.setAttribute('
     if(b.dataset.del){var n=+b.dataset.del;notes=notes.filter(function(x){return x.n!==n});refreshPins();closePop();return}   // 댓글 삭제
     if(b.dataset.a==='sw'&&quote){quote='';range=null;paintA(d,TH,wholeRaw);d.querySelector('.a').dataset.mode='whole';b.textContent='요소 전체에 달기로 바꿨습니다';b.disabled=true;ta.focus()}});
   ta.addEventListener('input',function(){go.disabled=!ta.value.trim();ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,240)+'px'});
-  ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();go.click()}});
+  // 한글 입력에서 마지막 글자를 확정하는 엔터는 keydown 때 isComposing 이라 그냥 무시됐다. 그래서 한글로 끝나는
+  // 댓글은 엔터를 두 번 눌러야 갔고, 한 번만 누른 사용자는 보낸 줄 알았다(2026-10-12 실측). keyup 때는 조합이
+  // 끝나 있으므로 거기서 보낸다. keydown 은 줄바꿈만 막는다.
+  ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing)e.preventDefault()});
+  ta.addEventListener('keyup',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing)go.click()});
   go.addEventListener('click',function(){if(!ta.value.trim())return;
     var group=(PICK.length>1&&PICK.indexOf(t)>=0)?PICK.slice():null;
     notes.push({n:(notes.length?Math.max.apply(null,notes.map(function(x){return x.n})):0)+1,el:t,els:group,path:t?path(t):'',
