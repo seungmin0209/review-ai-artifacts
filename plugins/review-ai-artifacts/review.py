@@ -394,7 +394,10 @@ function thumb(el){   // 그림·아이콘은 글로 설명하는 것보다 실�
   return box}
 function paintA(d,th,txt){var a=d.querySelector('.a');a.classList.remove('th');a.textContent='';
   if(th){a.classList.add('th');a.appendChild(th)}else a.textContent=txt}
-function openPop(t,quote,range,x,y){closePop();if(t)t.setAttribute('data-rv-target','');var d=document.createElement('div');d.id='__rv_pop';
+function keepDraft(){   // 적던 댓글을 버리지 않는다 — 다음 팝업을 열거나 제출하기 전에 먼저 보낸다
+  var d=document.getElementById('__rv_pop'),ta=d&&d.querySelector('textarea'),go=d&&d.querySelector('.go');
+  if(ta&&ta.value.trim()&&go)go.click()}
+function openPop(t,quote,range,x,y){keepDraft();closePop();if(t)t.setAttribute('data-rv-target','');var d=document.createElement('div');d.id='__rv_pop';
   d.style.left=Math.max(8,Math.min(x,window.innerWidth-580+window.scrollX))+'px';d.style.top=(y+10)+'px';
   var wholeRaw=t?label(t):'문서 전체에 대한 종합 댓글',whole=wholeRaw.replace(/</g,'&lt;'),TH=t?thumb(t):null;
   var mine=notes.filter(function(x){return x.el===t});
@@ -469,7 +472,11 @@ function busyOn(){   // 누른 것이 보이게 — 왕복이 빨라 disabled �
 function busyOff(t0){   // 응답이 더 빨라도 5초는 유지한다
   setTimeout(function(){[ok,fin].forEach(function(b){b.classList.remove('busy');if(b.dataset.rvLabel!==undefined)b.textContent=b.dataset.rvLabel});
     ok.disabled=fin.disabled=false},Math.max(0,5000-(Date.now()-t0)))}
-function submit(btnEl,final){if(btnEl.disabled)return;ok.disabled=fin.disabled=true;var __t0=busyOn();requestId=requestId||crypto.randomUUID();
+function submit(btnEl,final){if(btnEl.disabled)return;
+  keepDraft();   // 팝업에 적다 만 댓글이 있으면 그것까지 싣는다
+  if(!final&&!notes.length&&!edits().length&&   // 빈 제출은 '이상 없음 승인' 이 된다. 댓글을 썼다고 믿는 사용자가 승인을 보내는 사고를 막는다
+     !confirm('보낼 수정도 댓글도 없습니다.\n\n이대로 보내면 "이상 없음" 으로 전달되어 '+AGENT+' 가 이 문서를 확정하고 편집 화면을 내립니다.\n\n댓글을 쓰셨다면 ↑ 로 보냈는지 확인해 주세요. 그대로 제출할까요?'))return;
+  ok.disabled=fin.disabled=true;var __t0=busyOn();requestId=requestId||crypto.randomUUID();
   var ev={id:requestId,final:!!final,edits:edits(),comments:notes.map(function(x){var c={n:x.n,path:x.path,anchor:x.anchor,quote:x.quote,text:x.text};if(x.paths&&x.paths.length>1)c.paths=x.paths;return c})};ev.approved=!!final||(!ev.edits.length&&!ev.comments.length);   // 변경·댓글 없이 제출 = 이상 없음(승인) · 마무리 = 수정이 있어도 이걸로 끝
   if(SEL)ev.to=SEL;   // 이 문서를 지켜보는 세션이 둘 이상이면(fork 쌍둥이) 고른 쪽으로만 보낸다
   ((dirty&&!ISMD)?save(false,true).catch(function(e){if(e.code===409){ev.conflict=true;return}throw e}):Promise.resolve())   // 409 = 새 판 위에 얹어 달라는 제출
