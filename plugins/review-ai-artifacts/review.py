@@ -47,6 +47,7 @@ ap.add_argument("--ack", help="반영을 완료한 제출 ID")
 ap.add_argument("--result", default="반영 완료", help="--ack 처리 결과")
 ap.add_argument("--changes", help='--ack 와 함께: 무엇을 왜 바꿨는지. JSON 목록 [{"n":1,"what":"...","why":"...","path":"(생략하면 그 댓글의 요소)"}]. 화면에서 노란 테두리로 보인다')
 ap.add_argument("--close", action="store_true", help="이 문서의 편집기 서버만 내린다 (다른 문서 서버는 그대로)")
+ap.add_argument("--doctor", action="store_true", help="떠 있는 편집기를 모두 훑어 제출이 묻힌 곳·ack 가 빠진 곳을 찾는다 (문서 인자 없이 실행)")
 ap.add_argument("--idle", type=int, default=120, help="브라우저 탭이 닫혀 요청이 이만큼(분) 없으면 스스로 종료. 0 이면 끄지 않음")
 A = ap.parse_args()
 cfg = json.loads(CONFIG.read_text(encoding="utf-8")) if CONFIG.exists() else {}
@@ -62,6 +63,36 @@ if A.set_mode or A.show_config or A.set_initial or A.set_agent or A.set_theme:
     if A.set_mode or A.set_initial or A.set_agent or A.set_theme:
         CONFIG.parent.mkdir(parents=True, exist_ok=True); CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(cfg, ensure_ascii=False) if cfg else "설정 없음 — 첫 사용. SKILL.md 의 '처음 한 번 묻기' 절을 따른다"); sys.exit(0)
+if A.doctor:
+    import socket, urllib.request
+    bad = live = 0
+    for port in range(8901, 8991):
+        with socket.socket() as sk:
+            if sk.connect_ex(("127.0.0.1", port)) != 0: continue
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as r: h = json.load(r)
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/status", timeout=1) as r: st = json.load(r)
+        except Exception: continue
+        if not h.get("doc"): continue
+        live += 1
+        doc = pathlib.Path(h["doc"]); evs = doc.parent / "_review_events.jsonl"
+        pend = [r for r in review_events.read(evs) if r.get("doc") == str(doc) and r.get("status") == "new"] if evs.exists() else []
+        why = []
+        if pend and not h.get("watched") and not h.get("working"):
+            why.append(f"제출 {len(pend)}건이 아무에게도 가지 않았다 — 이 문서를 지켜보는 세션이 없다")
+        if pend and doc.exists():   # 문서는 고쳐졌는데 제출은 new 로 남아 있다 = 반영해 놓고 --ack 를 빠뜨렸다
+            wrote = datetime.datetime.fromtimestamp(doc.stat().st_mtime).isoformat(timespec="seconds")
+            if wrote > max(r.get("ts", "") for r in pend):
+                why.append(f"문서는 {wrote} 에 고쳐졌는데 제출 {len(pend)}건이 아직 미처리다 — --ack 가 빠진 것으로 보인다")
+        if str(h.get("owner", "")).startswith("pid-"):
+            why.append("--session 없이 띄웠다 — Monitor 가 owner 로 거르면 제출이 묻힌다")
+        mark = "✗" if why else "·"
+        print(f"{mark} {port}  {doc.name}")
+        print(f"     감시 {h.get('watched')} · 반영중 {h.get('working')} · 미처리 {st.get('pending_count')} · 주인 {h.get('owner_label')}")
+        for w in why: print(f"     → {w}")
+        bad += bool(why)
+    print(f"\n편집기 {live}개 · 손봐야 할 곳 {bad}개" if live else "떠 있는 편집기가 없습니다")
+    sys.exit(1 if bad else 0)
 if not A.doc: raise SystemExit("HTML 파일 경로를 준다")
 DOC = pathlib.Path(A.doc).resolve(); assert A.close or (DOC.is_file() and DOC.suffix.lower() in (".html", ".htm", ".md", ".markdown")), "HTML 또는 md 파일 하나를 준다"   # --close 는 파일이 지워진 뒤에도 서버를 내릴 수 있어야 한다
 
@@ -655,9 +686,9 @@ def reply(h, code, text, ctype="text/plain;charset=utf-8"):
 
 LAST = [time.time()]   # 마지막 요청 시각. 브라우저 탭이 열려 있으면 2초마다 /mtime 이 들어온다
 WATCH = [0.0]          # 이 문서를 지켜보는 세션(Monitor)의 마지막 heartbeat
-WATCHED_FOR = 180      # 이 안에 heartbeat 가 있으면 "감시 연결". Monitor 는 60초마다 보내고 30분마다 만료돼 다시 걸리므로, 한 번 거른 주기까지는 끊김으로 보지 않는다
+WATCHED_FOR = int(os.environ.get("REVIEW_WATCH_WINDOW") or 180)   # 이 안에 heartbeat 가 있으면 "감시 연결". Monitor 는 60초마다 보내고 30분마다 만료돼 다시 걸리므로, 한 번 거른 주기까지는 끊김으로 보지 않는다. 환경변수는 검사용이다
 WOKE = [0.0]           # 살아 있는 세션에게 제출을 건넨 시각. Monitor 는 제출을 감지하면 명령 전체가 끝나므로 heartbeat 도 함께 멎는다 — 에이전트가 반영하는 동안은 끊긴 것이 아니다
-WORKING = 1200         # 그 공백을 끊김으로 보지 않는 한도(초). 이보다 오래 ack 가 없으면 정말로 끊긴 것으로 본다
+WORKING = int(os.environ.get("REVIEW_WORKING_WINDOW") or 1200)   # 그 공백을 끊김으로 보지 않는 한도(초). 이보다 오래 ack 가 없으면 정말로 끊긴 것으로 본다
 LISTENERS = {}         # 세션ID -> {label, ts}. fork 로 갈라진 쌍둥이가 같은 문서를 함께 지켜볼 수 있다
 def watched(): return CODEX is not None or time.time() - WATCH[0] < WATCHED_FOR
 def working(): return not watched() and 0 < time.time() - WOKE[0] < WORKING
