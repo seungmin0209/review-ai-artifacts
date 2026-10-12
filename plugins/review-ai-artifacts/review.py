@@ -69,7 +69,7 @@ def pick_port(doc, want=None):
     """문서별 고정 포트. 이미 그 포트에 같은 문서가 떠 있으면 (port, True). 다른 문서가 쓰고 있으면 다음 빈 포트."""
     import socket, urllib.request, zlib
     start = want or 8901 + zlib.crc32(str(doc).encode()) % 90
-    order = list(range(start, 8991)) + list(range(8901, start))
+    order = [start] + [p for p in list(range(start, 8991)) + list(range(8901, start)) if p != start]   # --port 로 8901~8990 밖을 찍었을 때 그 자리가 목록에서 빠져 조용히 다른 포트에 뜨곤 했다
     busy = []
     for p in order:   # 빈 포트에서 멈추지 않고 전 구간을 본다 — --port 로 다른 자리에 떠 있는 같은 문서도 찾아야 한다
         with socket.socket() as s:
@@ -461,9 +461,11 @@ window.addEventListener('beforeunload',function(e){if(dirty||notes.length){e.pre
 function showStatus(r){
   var copy=document.getElementById('__rv_copy'),AG='__AGENT__';
   if(STALE)return;   // 새 판 안내가 우선이다
-  if(r.status==='done'){copy.hidden=true;fresh.hidden=true;if(!CH.length)showChanges();
+  if(r.status==='done'&&!r.pending_count){copy.hidden=true;fresh.hidden=true;if(!CH.length)showChanges();   // 뒤에 아직 안 본 제출이 남아 있으면 '반영 완료' 가 아니다
     st.textContent=r.result||'반영 완료';st.title=st.textContent;return}
-  if(r.pending_count>1){st.textContent='제출 '+r.pending_count+'건 대기 중 — '+AG+' 가 모아서 한 번에 반영합니다';copy.hidden=true;return}
+  if(r.pending_count>1){
+    if(r.watched===false&&!r.working){st.innerHTML='<span class="warn">제출 '+r.pending_count+'건이 아직 전달되지 않았습니다 — 지금 이 문서를 지켜보는 '+AG+' 세션이 없습니다. 대화창에 알려 주세요 (오른쪽 버튼으로 문구 복사)</span>';copy.hidden=false;return}
+    st.textContent='제출 '+r.pending_count+'건 '+(r.working?'반영 중':'대기 중')+' — '+AG+' 가 모아서 한 번에 처리합니다';copy.hidden=true;return}
   if(AG!=='Codex'&&(r.delivery==='manual'||!r.delivery)){   // Claude 등: 세션이 건 Monitor 가 이벤트 파일을 지켜본다 — heartbeat 로 확인한다
     if(r.conflict){st.textContent='제출되었습니다 — 화면은 옛 판이라 파일에 쓰지 않고, 이 수정을 '+AG+' 의 새 판 위에 얹어 달라고 보냈습니다. 반영되면 새 판을 불러옵니다';copy.hidden=r.watched!==false;return}
     if(r.watched===false){st.textContent='저장됨 — 지금 이 문서를 지켜보는 '+AG+' 세션이 없습니다. 대화창에 "제출 반영해줘" 라고 알려 주세요 (오른쪽 버튼으로 문구 복사)';copy.hidden=false;return}
@@ -477,18 +479,22 @@ document.getElementById('__rv_copy').addEventListener('click',function(){
   var message='review-ai-artifacts 제출 내용을 반영해줘. 문서: '+__DOC_JSON__+' / 제출 ID: '+((lastEvent||{}).id||'기존 미처리 제출');
   navigator.clipboard.writeText(message).then(function(){st.textContent='전달 요청 복사 완료 · 현재 대화에 붙여넣기'}).catch(function(){st.textContent=message});
 });
-var marks=document.getElementById('__rv_marks'),CH=[],WATCHED=null;
-function setWatched(w){if(w===WATCHED)return;WATCHED=w;   // 누르기 전에 보이게 한다 — 눌러 보고 나서야 아는 것은 늦다
-  var off=(w===false),tip=off?(AGENT+' 세션이 이 문서를 지켜보고 있지 않습니다. 지금 제출하면 파일에 저장만 되고, 대화창에 알려야 반영됩니다'):'';
-  [ok,fin].forEach(function(b){b.classList.toggle('off',off);if(off)b.title=tip;else b.removeAttribute('title')});
+var marks=document.getElementById('__rv_marks'),CH=[],WATCHED=null,WORKING=false;
+function setWatched(w,working){working=!!working;if(w===WATCHED&&working===WORKING)return;WATCHED=w;WORKING=working;   // 누르기 전에 보이게 한다 — 눌러 보고 나서야 아는 것은 늦다
+  var off=(w===false&&!working),   // 에이전트가 제출을 받아 반영하는 동안에는 heartbeat 가 멎는다. 그것까지 끊김으로 칠하면 제출할 때마다 거짓 경보가 뜬다
+      tip=off?(AGENT+' 세션이 이 문서를 지켜보고 있지 않습니다. 지금 제출하면 파일에 저장만 되고, 대화창에 알려야 반영됩니다')
+             :working?(AGENT+' 가 받은 제출을 반영하는 중입니다. 그동안에도 이어서 고치고 제출할 수 있습니다'):'';
+  [ok,fin].forEach(function(b){b.classList.toggle('off',off);if(tip)b.title=tip;else b.removeAttribute('title')});
   if(off&&!st.textContent)st.innerHTML='<span class="warn">'+AGENT+' 세션 미연결 — 제출은 저장되지만 알려야 반영됩니다</span>';
   if(!off&&st.textContent.indexOf('미연결')>=0)st.textContent=''}
 var PIN=false;   // [변경사항 확인] 을 눌러 테두리를 고정했는가
 function setMarks(on){CH.forEach(function(el){if(on)el.setAttribute('data-rv-changed','');else el.removeAttribute('data-rv-changed')});if(!on)tipOff()}
+function headEl(){var c=document.querySelectorAll('h1,h2,header');for(var i=0;i<c.length;i++)if(!ours(c[i]))return c[i];
+  return document.querySelector('main,article')||document.body.firstElementChild}
 function showChanges(){fetch('/changes').then(function(r){return r.json()}).then(function(list){
   setMarks(false);CH=[];PIN=false;
   var miss=0;
-  list.forEach(function(c){var el=null;try{el=c.path?document.querySelector(c.path):null}catch(e){}
+  list.forEach(function(c){var el=null;try{el=c.path?document.querySelector(c.path):headEl()}catch(e){}   // 종합댓글은 가리킬 자리가 없다 — 문서 머리에 붙여 보여 준다
     if(!el||ours(el)){miss++;return}
     if(el.__rvWhat){el.__rvWhat.push(c)}else{el.__rvWhat=[c];CH.push(el)}});   // 한 요소에 여러 건이 붙을 수 있다 — 덮어쓰면 뒤엣것만 남는다
   marks.hidden=!CH.length;var tot=CH.reduce(function(a,el){return a+el.__rvWhat.length},0);marks.textContent='변경사항 확인 ('+tot+(tot!==CH.length?' · '+CH.length+'곳':'')+(miss?' · 못 찾음 '+miss:'')+')';marks.classList.remove('on');PIN=false;CUR=-1;navShow(false);tipOff();
@@ -544,7 +550,8 @@ document.addEventListener('mouseover',function(e){
   tipFor(el)});
 showChanges();
 var CHREV=null;
-setInterval(function(){if(STALE||ok.disabled)return;fetch('/status').then(function(r){return r.json()}).then(function(r){setWatched(r.watched);setListeners(r.listeners);if(CHREV===null){CHREV=r.chg_rev}else if(r.chg_rev!==CHREV){CHREV=r.chg_rev;showChanges()}   // 반영이 새로 기록됐다 — 문서가 그대로여도 변경 표시는 갱신해야 한다
+setInterval(function(){if(ok.disabled)return;fetch('/status').then(function(r){return r.json()}).then(function(r){setWatched(r.watched,r.working);setListeners(r.listeners);   // 새 판 안내 중에도 버튼 색은 계속 맞춘다 — 여기서 멈추면 감시가 돌아와도 회색이 굳는다
+if(STALE)return;if(CHREV===null){CHREV=r.chg_rev}else if(r.chg_rev!==CHREV){CHREV=r.chg_rev;showChanges()}   // 반영이 새로 기록됐다 — 문서가 그대로여도 변경 표시는 갱신해야 한다
 if(r.id||r.pending_count){lastEvent=r;showStatus(r)}}).catch(function(){})},2000);
 try{var __y=sessionStorage.getItem('__rv_y');if(__y!==null){sessionStorage.removeItem('__rv_y');addEventListener('load',function(){scrollTo(0,+__y)})}}catch(e){}
 var MT=__MTIME__;setInterval(function(){fetch('/mtime').then(function(r){return r.text()}).then(function(m){if(m===MT)return;
@@ -647,9 +654,13 @@ def reply(h, code, text, ctype="text/plain;charset=utf-8"):
     h.send_header("Content-Length", str(len(data))); h.end_headers(); h.wfile.write(data)
 
 LAST = [time.time()]   # 마지막 요청 시각. 브라우저 탭이 열려 있으면 2초마다 /mtime 이 들어온다
-WATCH = [0.0]          # 이 문서를 지켜보는 세션(Monitor)의 마지막 heartbeat. 90초 안이면 "감시 연결"
+WATCH = [0.0]          # 이 문서를 지켜보는 세션(Monitor)의 마지막 heartbeat
+WATCHED_FOR = 180      # 이 안에 heartbeat 가 있으면 "감시 연결". Monitor 는 60초마다 보내고 30분마다 만료돼 다시 걸리므로, 한 번 거른 주기까지는 끊김으로 보지 않는다
+WOKE = [0.0]           # 살아 있는 세션에게 제출을 건넨 시각. Monitor 는 제출을 감지하면 명령 전체가 끝나므로 heartbeat 도 함께 멎는다 — 에이전트가 반영하는 동안은 끊긴 것이 아니다
+WORKING = 1200         # 그 공백을 끊김으로 보지 않는 한도(초). 이보다 오래 ack 가 없으면 정말로 끊긴 것으로 본다
 LISTENERS = {}         # 세션ID -> {label, ts}. fork 로 갈라진 쌍둥이가 같은 문서를 함께 지켜볼 수 있다
-def watched(): return CODEX is not None or time.time() - WATCH[0] < 90
+def watched(): return CODEX is not None or time.time() - WATCH[0] < WATCHED_FOR
+def working(): return not watched() and 0 < time.time() - WOKE[0] < WORKING
 def listeners():   # 최근 3분 안에 heartbeat 를 보낸 세션만 살아 있다고 본다. 죽은 세션은 폴링이 끊겨 저절로 빠진다
     now = time.time()
     rows = [{"session": s, "label": v["label"], "self": s == OWNER} for s, v in LISTENERS.items() if now - v["ts"] < 180]
@@ -672,9 +683,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return ok
     def do_GET(self):
         if self.path.startswith("/watch"): return self.do_POST()   # GET 으로 보낸 heartbeat 도 받는다 — 404 로 조용히 흘리면 화면이 회색인 채 방치된다
-        if self.path == "/health": return reply(self, 200, json.dumps({"version":3,"doc":str(DOC),"owner":OWNER,"owner_label":OWNER_LABEL,"thread_id":THREAD,"automatic":bool(THREAD and CODEX),"watched":watched()}), "application/json")
+        if self.path == "/health": return reply(self, 200, json.dumps({"version":3,"doc":str(DOC),"owner":OWNER,"owner_label":OWNER_LABEL,"thread_id":THREAD,"automatic":bool(THREAD and CODEX),"watched":watched(),"working":working()}), "application/json")
         if self.path == "/status":
-            st_ = review_events.status(EVENTS, DOC, THREAD if CODEX else None, OWNER); st_["watched"] = watched(); st_["listeners"] = listeners()
+            mine = {OWNER} | set(LISTENERS)   # 이어받은 세션 앞으로 간 제출도 이 화면의 대기 건수다. 그 세션의 heartbeat 가 멎어도 미처리 제출이 목록에서 사라지면 안 되므로 '한 번이라도 들었던' 세션을 전부 센다
+            st_ = review_events.status(EVENTS, DOC, THREAD if CODEX else None, mine); st_["watched"] = watched(); st_["listeners"] = listeners()
+            st_["working"] = working() and bool(st_.get("pending_count"))   # 깨워 둔 세션이 아직 반영 중 — 미처리 제출이 남아 있을 때만 그렇게 본다
             chg = [r for r in review_events.read(EVENTS) if r.get("doc") == str(DOC) and r.get("changes")]
             st_["chg_rev"] = (chg[-1].get("id") or "") + ":" + str(len(chg[-1]["changes"])) if chg else ""   # 마지막 반영의 id+건수. 바뀌면 화면이 변경 목록을 다시 받는다
             return reply(self, 200, json.dumps(st_, ensure_ascii=False), "application/json")
@@ -717,7 +730,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/confirm"):
             try:
                 payload = json.loads(raw); to = str(payload.pop("to", "") or "") or OWNER   # 지켜보는 세션이 여럿이면 화면에서 고른 쪽으로 보낸다
+                if to == OWNER:
+                    live = listeners()
+                    if live and not any(r["session"] == OWNER for r in live):
+                        to = live[0]["session"]   # 주인은 끊겼고 이어받은 세션이 듣고 있다 — 죽은 주인 앞으로 보내면 아무 Monitor 도 집지 않는다
                 ev = review_events.submit(EVENTS, DOC, AGENT, "md" if IS_MD else "html", payload, THREAD, CODEX, to)
+                if watched(): WOKE[0] = time.time()   # 받아 갈 세션이 있었다. 지금부터 그 세션은 반영에 들어가고 heartbeat 가 멎는다
                 ev = dict(ev, watched=watched())   # 제출 직후 화면이 "깨어날 세션이 있는지" 를 바로 알아야 한다 (/status 만으로는 한 박자 늦다)
                 return reply(self, 200, json.dumps(ev, ensure_ascii=False), "application/json")
             except (ValueError, TypeError, TimeoutError) as error:

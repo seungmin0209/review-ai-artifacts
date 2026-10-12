@@ -81,7 +81,10 @@ def submit(events, doc, agent, source, payload, thread=None, executable=None, ow
     return update(events, event_id, delivery=delivery)
 
 def status(events, doc, thread=None, owner=None):
-    rows = [r for r in read(events) if r.get('doc') == str(doc) and (owner is None or r.get('owner') in (owner, None))]   # 남의 세션 제출은 이 화면의 대기 건수가 아니다 (owner 없는 구형 줄은 포함)
+    # 남의 세션 제출은 이 화면의 대기 건수가 아니다 (owner 없는 구형 줄은 포함).
+    # owner 로 집합을 주면 그 세션들 전부를 이 화면 것으로 본다 — 주인이 끊겨 이어받은 세션 앞으로 간 제출을 놓치지 않는다.
+    allowed = owner if isinstance(owner, (set, frozenset)) else ({owner} if owner else None)
+    rows = [r for r in read(events) if r.get('doc') == str(doc) and (allowed is None or r.get('owner') is None or r.get('owner') in allowed)]
     row = rows[-1] if rows else {}
     result = {k:row.get(k) for k in ('id','status','delivery','result','approved','final','conflict')}
     result.update(automatic=bool(thread), pending_count=sum(r.get('status') == 'new' for r in rows))
