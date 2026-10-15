@@ -261,6 +261,15 @@ var bar=document.getElementById('__rv_bar'),st=document.getElementById('__rv_st'
 fresh.addEventListener('click',function(){if(notes.length||dirty){if(!confirm('지금 화면의 수정과 댓글이 사라집니다. 새 판을 불러올까요?'))return}location.reload()});
 document.getElementById('__rv_whole').addEventListener('click',function(e){var r=e.currentTarget.getBoundingClientRect();openPop(null,'',null,r.left+window.scrollX,r.bottom+window.scrollY)});   // 특정 요소가 아닌 문서 전체에 다는 총평
 function ours(el){return el.closest('#__rv_bar,#__rv_pop,.__rv_pin')}
+// 발표 장표처럼 문서가 window·document 에서 ←→·Space·Enter·Backspace·글자 키를 가로채면, 댓글을 적거나 글자를 고치는 중에
+// 커서가 안 움직이고 장이 넘어갔다(2026-10-15 승민). 편집기 창과 고치는 중인 요소에서 난 이벤트는 문서까지 올라가지 않게 막는다.
+// Escape·Cmd+S 는 편집기 자신의 document 단축키라 통과시킨다.
+var KEYS=['keydown','keyup','keypress'],PTRS=['click','dblclick','mousedown','mouseup','pointerdown','pointerup','wheel','touchstart','touchend','contextmenu'];
+function shieldKey(e){if(e.key==='Escape'||((e.metaKey||e.ctrlKey)&&/^s$/i.test(e.key)))return;e.stopPropagation()}
+function shieldPtr(e){e.stopPropagation()}
+function shield(el,ptr){KEYS.forEach(function(t){el.addEventListener(t,shieldKey)});if(ptr)PTRS.forEach(function(t){el.addEventListener(t,shieldPtr,{passive:true})})}
+function unshield(el){KEYS.forEach(function(t){el.removeEventListener(t,shieldKey)})}
+shield(bar,true);
 var VOID={IMG:1,SVG:1,BR:1,HR:1,INPUT:1,VIDEO:1,CANVAS:1,PICTURE:1,SOURCE:1};
 function hasText(el){if(Array.from(el.childNodes).some(function(n){return n.nodeType===3&&n.textContent.trim()}))return true;
   return el.children.length===0&&!VOID[el.tagName]&&(orig.has(el)||el.isContentEditable||/^(H[1-6]|P|LI|TD|TH|SPAN|B|EM|STRONG|SMALL|FIGCAPTION|SUMMARY|LABEL|A|CODE)$/.test(el.tagName))}  // 글자를 다 지운 요소도 다시 잡힌다
@@ -281,9 +290,9 @@ document.addEventListener('dblclick',function(e){var t=target(e);if(!t)return;e.
   flatten(t);
   if(!orig.has(t))orig.set(t,t.innerText);
   if(t.tagName==='A'){t.dataset.rvHref=t.getAttribute('href');t.removeAttribute('href')}
-  t.setAttribute('contenteditable','plaintext-only');t.focus();
+  t.setAttribute('contenteditable','plaintext-only');shield(t,false);t.focus();
   t.addEventListener('input',function(){dirty=true;btn.disabled=false;st.textContent=ISMD?'수정됨 — 제출하면 원문에 반영':'수정됨 — 제출하면 파일에 함께 저장됩니다'},{once:true});
-  t.addEventListener('blur',function(){t.removeAttribute('contenteditable');brify(t);if(t.dataset.rvHref!==undefined){t.setAttribute('href',t.dataset.rvHref);delete t.dataset.rvHref}},{once:true});
+  t.addEventListener('blur',function(){t.removeAttribute('contenteditable');unshield(t);brify(t);if(t.dataset.rvHref!==undefined){t.setAttribute('href',t.dataset.rvHref);delete t.dataset.rvHref}},{once:true});
 },true);
 document.addEventListener('mousedown',function(e){var d=document.getElementById('__rv_pop');if(d&&!d.contains(e.target)&&!d.querySelector('textarea').value.trim())closePop()},true); // 적기 전이면 바깥 클릭으로 닫힘
 document.addEventListener('click',function(e){if(ours(e.target))return;var a=e.target.closest('a');if(a&&!e.target.isContentEditable&&!(a.getAttribute('href')||'').startsWith('#')&&!a.hasAttribute('download'))e.preventDefault()},true); // 편집 중 링크 이동 방지
@@ -403,13 +412,13 @@ function openPop(t,quote,range,x,y){keepDraft();closePop();if(t)t.setAttribute('
   var mine=notes.filter(function(x){return x.el===t});
   var list=mine.length?'<ul class="list">'+mine.map(function(x){return '<li><b>#'+x.n+'</b><span>'+(x.quote?'“'+x.quote.slice(0,40).replace(/</g,'&lt;')+'” · ':'')+x.text.replace(/</g,'&lt;')+'</span><button type="button" data-del="'+x.n+'" title="이 댓글 삭제">✕</button></li>'}).join('')+'</ul>':'';
   d.innerHTML='<div class="t">'+(document.title||location.pathname).replace(/</g,'&lt;')+'</div>'+list+'<div class="a" data-mode="'+(quote?'quote':'whole')+'">'+(quote?quote.slice(0,160).replace(/</g,'&lt;'):whole)+'</div>'
-   +(t?'<div class="sw"><button type="button" data-a="sw">'+(quote?'이 요소 전체에 달기':'문구만 고르려면 드래그 후 우클릭')+'</button></div>':'')
-   +'<textarea rows="2" placeholder="'+(mine.length?'댓글 추가':'댓글 남기기')+'"></textarea><div class="r"><span class="lbl">Send to __AGENT__</span><button class="go" data-a="ok" disabled aria-label="보내기"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>';
-  document.body.appendChild(d);var ta=d.querySelector('textarea'),go=d.querySelector('.go');ta.focus();
+   +(t?'<div class="sw"><button type="button" data-rv-act="sw">'+(quote?'이 요소 전체에 달기':'문구만 고르려면 드래그 후 우클릭')+'</button></div>':'')
+   +'<textarea rows="2" placeholder="'+(mine.length?'댓글 추가':'댓글 남기기')+'"></textarea><div class="r"><span class="lbl">Send to __AGENT__</span><button class="go" data-rv-act="ok" disabled aria-label="보내기"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>';
+  document.body.appendChild(d);shield(d,true);var ta=d.querySelector('textarea'),go=d.querySelector('.go');ta.focus();
   if(!quote)paintA(d,TH,wholeRaw);
   d.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
     if(b.dataset.del){var n=+b.dataset.del;notes=notes.filter(function(x){return x.n!==n});refreshPins();closePop();return}   // 댓글 삭제
-    if(b.dataset.a==='sw'&&quote){quote='';range=null;paintA(d,TH,wholeRaw);d.querySelector('.a').dataset.mode='whole';b.textContent='요소 전체에 달기로 바꿨습니다';b.disabled=true;ta.focus()}});
+    if(b.dataset.rvAct==='sw'&&quote){quote='';range=null;paintA(d,TH,wholeRaw);d.querySelector('.a').dataset.mode='whole';b.textContent='요소 전체에 달기로 바꿨습니다';b.disabled=true;ta.focus()}});
   ta.addEventListener('input',function(){go.disabled=!ta.value.trim();ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,240)+'px'});
   // 한글 입력에서 마지막 글자를 확정하는 엔터는 keydown 때 isComposing 이라 그냥 무시됐다. 그래서 한글로 끝나는
   // 댓글은 엔터를 두 번 눌러야 갔고, 한 번만 누른 사용자는 보낸 줄 알았다(2026-10-12 실측). keyup 때는 조합이
@@ -426,7 +435,7 @@ function openPop(t,quote,range,x,y){keepDraft();closePop();if(t)t.setAttribute('
     if(range){try{var m=document.createElement('mark');m.setAttribute('data-rv-mark','');range.surroundContents(m)}catch(err){}}
     if(t){t.setAttribute('data-rv-note','');pin(t)}closePop();finVis();st.textContent='댓글 '+notes.length+'개 (제출 전)'})}
 var pins=new Map();   // 요소 → 마커
-function pin(el){var p=pins.get(el);if(!p){p=document.createElement('span');p.className='__rv_pin';p.textContent=INITIAL;document.body.appendChild(p);pins.set(el,p);
+function pin(el){var p=pins.get(el);if(!p){p=document.createElement('span');p.className='__rv_pin';p.textContent=INITIAL;document.body.appendChild(p);shield(p,true);pins.set(el,p);
     p.addEventListener('click',function(e){e.stopPropagation();openPop(el,'',null,e.pageX,e.pageY)})}
   var r=el.getBoundingClientRect(),n=notes.filter(function(x){return x.el===el}).length;
   p.style.left=(r.left+window.scrollX-36)+'px';p.style.top=(r.top+window.scrollY+r.height/2-15)+'px';
@@ -499,6 +508,9 @@ ok.addEventListener('mouseenter',function(){tipOff();TIP=document.createElement(
 ok.addEventListener('mouseleave',tipOff);
 document.addEventListener('keydown',function(e){if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();if(!ISMD)save().catch(function(){});else st.textContent='md 는 제출하면 에이전트가 원문에 반영합니다'}if(e.key==='Escape')closePop()});
 window.addEventListener('resize',function(){pins.forEach(function(p,el){pin(el)})});
+// 장표처럼 스크롤 없이 화면이 바뀌는 문서에서는 넘긴 장의 마커가 그 자리에 남아 다른 장 위에 떠 있었다(2026-10-15). 요소가 안 보이면 숨기고, 보이면 다시 붙인다
+setInterval(function(){pins.forEach(function(p,el){var r=el.isConnected&&el.getClientRects().length?el.getBoundingClientRect():null;
+  if(!r||(!r.width&&!r.height)){p.style.display='none';return}p.style.display='';pin(el)})},400);
 window.addEventListener('beforeunload',function(e){if(dirty||notes.length){e.preventDefault();e.returnValue=''}});
 function showStatus(r){
   var copy=document.getElementById('__rv_copy'),AG='__AGENT__';

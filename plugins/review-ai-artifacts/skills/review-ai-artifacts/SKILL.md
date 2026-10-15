@@ -174,6 +174,7 @@ python3 review.py --set-agent Codex            # 환경변수로 감지되지 �
 
 ## 원칙
 
+- 편집기 창(상단 바·댓글 팝업·마커)과 글자를 고치는 중인 요소에서 난 키·클릭 이벤트는 문서로 올라가지 않는다. 발표 장표처럼 ←→·Space·Enter·글자 키를 가로채는 문서에서도 댓글을 적을 수 있다(Escape·Cmd+S 는 통과). 편집기 속성은 `data-rv-*` 만 쓴다 — 문서 CSS 의 `[data-a]` 같은 선택자와 겹치지 않는다.
 - 글자 수정과 댓글만 지원한다. 요소 추가·삭제·이동은 댓글로 받아 에이전트가 한다.
 - **.md 는 저장 없이 제출로만 반영한다.** 화면은 보기용 렌더(제목·문단·목록·표·코드·인용)이고 원문 복원용이 아니다. 에이전트가 before→after 치환으로 원문을 고치므로 표·중첩 구조가 깨지지 않는다.
 - 규약·설정 성격의 md(CLAUDE.md·AGENTS.md·README.md·SKILL.md·handoff·STATUS 등)와 `.agents/`·`.claude/` 아래 파일은 훅이 산출물로 보지 않는다.
@@ -188,6 +189,7 @@ python3 review.py --set-agent Codex            # 환경변수로 감지되지 �
 | `review.py` | 편집기 서버 + 브라우저 UI + 완료 ack · `--close` 종료 CLI (탭 닫힘 뒤 `--idle` 분 유휴면 자동 종료) |
 | `events.py` · `test_events.py` | 제출 저장·Codex queue·상태 갱신, 격리 회귀 검사 |
 | `test_liveness.py` | 화면이 말하는 상태와 실제가 어긋나지 않는지 — 반영 중 공백·끊긴 주인·이어받기 전달·`--doctor`. 5초면 끝난다 |
+| `test_keys.py` | 문서가 키·클릭을 가로채는 화면(발표 장표 등)에서 댓글·글자 수정 중 ←→·Space·Backspace·글자 키와 팝업 클릭이 문서로 새지 않는지, 문서 CSS 가 편집기 버튼을 가리지 않는지, 숨은 요소의 마커가 숨는지. Playwright 가 없으면 건너뛴다 |
 | `publish.sh` | 공개 저장소(GitHub `seungmin0209/review-ai-artifacts`) 동기화 + push. **이 폴더를 커밋할 때마다 함께 실행한다** — 공개본이 뒤처지면 마켓플레이스 사용자는 옛 코드를 받는다 (2026-09-15~17 이틀치 18커밋이 밀렸던 전례) |
 | `hook.py` · `register_hook.py` | PostToolUse(Write·Edit·Bash) + Stop 훅과 그 등록 스크립트 |
 | `~/.config/review-ai-artifacts/state.json` | 세션별 처리 기록(중복 발동 방지) |
