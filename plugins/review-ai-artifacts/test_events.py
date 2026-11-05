@@ -5,6 +5,8 @@ import tempfile
 import uuid
 from unittest.mock import patch
 import subprocess
+import sys
+import unicodedata
 import events
 
 with tempfile.TemporaryDirectory() as directory:
@@ -33,4 +35,12 @@ with tempfile.TemporaryDirectory() as directory:
     # Updating delivery must preserve a concurrently acknowledged result.
     events.update(log,manual['id'],status='done')
     assert events.update(log,manual['id'],delivery='queued')['status']=='done'
-print('PASS: durable save, exact target, idempotency, ack, document isolation, failures, timeout, manual fallback')
+# Relative --ack inside a Korean folder: macOS getcwd returns NFD while the stored doc is NFC (2026-11-05 regression).
+with tempfile.TemporaryDirectory() as directory:
+    folder=Path(directory).resolve()/unicodedata.normalize('NFD','오픈업-OJT'); folder.mkdir()
+    log=folder/'_review_events.jsonl'; doc=folder/'doc.html'; doc.write_text('<html></html>',encoding='utf-8')
+    row=events.submit(log,unicodedata.normalize('NFC',str(doc)),'Claude','html',{'edits':[],'comments':[]})
+    assert events.status(log,doc)['id']==row['id']
+    ack=subprocess.run([sys.executable,str(Path(__file__).resolve().with_name('review.py')),'doc.html','--ack',row['id']],cwd=folder,capture_output=True,text=True)
+    assert ack.returncode==0 and events.read(log)[0]['status']=='done', ack.stdout+ack.stderr
+print('PASS: durable save, exact target, idempotency, ack, document isolation, failures, timeout, manual fallback, NFD relative ack')

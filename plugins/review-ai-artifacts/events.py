@@ -7,7 +7,10 @@ from pathlib import Path
 import shutil
 import subprocess
 import time
+import unicodedata
 import uuid
+
+def nfc(s): return unicodedata.normalize('NFC', str(s))   # macOS 한글 경로(NFD)와 제출 기록(NFC)을 같은 문서로 본다
 
 @contextlib.contextmanager
 def locked(events):
@@ -51,7 +54,7 @@ def submit(events, doc, agent, source, payload, thread=None, executable=None, ow
     with locked(events):
         existing = next((r for r in read(events) if r.get('id') == event_id), None)
         if existing:
-            if existing.get('doc') != str(doc):
+            if nfc(existing.get('doc', '')) != nfc(doc):
                 raise ValueError('다른 문서의 제출 ID입니다.')
             return existing  # Same request retried: never queue it twice.
         final = bool(payload.get('final'))   # '마무리' — 수정이 있어도 이걸로 끝, 더 고칠 것 없음
@@ -84,7 +87,7 @@ def status(events, doc, thread=None, owner=None):
     # 남의 세션 제출은 이 화면의 대기 건수가 아니다 (owner 없는 구형 줄은 포함).
     # owner 로 집합을 주면 그 세션들 전부를 이 화면 것으로 본다 — 주인이 끊겨 이어받은 세션 앞으로 간 제출을 놓치지 않는다.
     allowed = owner if isinstance(owner, (set, frozenset)) else ({owner} if owner else None)
-    rows = [r for r in read(events) if r.get('doc') == str(doc) and (allowed is None or r.get('owner') is None or r.get('owner') in allowed)]
+    rows = [r for r in read(events) if nfc(r.get('doc', '')) == nfc(doc) and (allowed is None or r.get('owner') is None or r.get('owner') in allowed)]
     row = rows[-1] if rows else {}
     result = {k:row.get(k) for k in ('id','status','delivery','result','approved','final','conflict')}
     result.update(automatic=bool(thread), pending_count=sum(r.get('status') == 'new' for r in rows))

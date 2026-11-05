@@ -76,7 +76,7 @@ if A.doctor:
         if not h.get("doc"): continue
         live += 1
         doc = pathlib.Path(h["doc"]); evs = doc.parent / "_review_events.jsonl"
-        pend = [r for r in review_events.read(evs) if r.get("doc") == str(doc) and r.get("status") == "new"] if evs.exists() else []
+        pend = [r for r in review_events.read(evs) if nfc(r.get("doc", "")) == nfc(doc) and r.get("status") == "new"] if evs.exists() else []
         why = []
         if pend and not h.get("watched") and not h.get("working"):
             why.append(f"제출 {len(pend)}건이 아무에게도 가지 않았다 — 이 문서를 지켜보는 세션이 없다")
@@ -123,7 +123,7 @@ if THREAD:
     THREAD = str(uuid.UUID(THREAD))  # Exact session only; never route by display name or --last.
 if A.ack:
     row = next((r for r in review_events.read(EVENTS) if r.get("id") == A.ack), None)
-    if row is None or row.get("doc") != str(DOC): raise SystemExit("이 문서의 제출 ID가 아닙니다")
+    if row is None or nfc(row.get("doc", "")) != nfc(DOC): raise SystemExit("이 문서의 제출 ID가 아닙니다")   # 상대 경로는 cwd(한글 폴더면 NFD)로 풀린다 — 제출 기록은 NFC
     fields = dict(status="done", result=A.result)
     if A.changes:
         try: items = json.loads(A.changes)
@@ -742,12 +742,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             mine = {OWNER} | set(LISTENERS)   # 이어받은 세션 앞으로 간 제출도 이 화면의 대기 건수다. 그 세션의 heartbeat 가 멎어도 미처리 제출이 목록에서 사라지면 안 되므로 '한 번이라도 들었던' 세션을 전부 센다
             st_ = review_events.status(EVENTS, DOC, THREAD if CODEX else None, mine); st_["watched"] = watched(); st_["listeners"] = listeners()
             st_["working"] = working() and bool(st_.get("pending_count"))   # 깨워 둔 세션이 아직 반영 중 — 미처리 제출이 남아 있을 때만 그렇게 본다
-            chg = [r for r in review_events.read(EVENTS) if r.get("doc") == str(DOC) and r.get("changes")]
+            chg = [r for r in review_events.read(EVENTS) if nfc(r.get("doc", "")) == nfc(DOC) and r.get("changes")]
             st_["chg_rev"] = (chg[-1].get("id") or "") + ":" + str(len(chg[-1]["changes"])) if chg else ""   # 마지막 반영의 id+건수. 바뀌면 화면이 변경 목록을 다시 받는다
             return reply(self, 200, json.dumps(st_, ensure_ascii=False), "application/json")
         if self.path.startswith("/mtime"): return reply(self, 200, str(DOC.stat().st_mtime_ns))
         if self.path == "/changes":   # 가장 최근 반영의 변경 표시
-            rows = [r for r in review_events.read(EVENTS) if r.get("doc") == str(DOC) and r.get("changes")]
+            rows = [r for r in review_events.read(EVENTS) if nfc(r.get("doc", "")) == nfc(DOC) and r.get("changes")]
             return reply(self, 200, json.dumps(rows[-1]["changes"] if rows else [], ensure_ascii=False), "application/json")
         if self.path.startswith("/doc"): return reply(self, 200, nfc(DOC))
         if self.path.split("?")[0] not in ("/", "/index.html"):   # 모르는 경로에 문서를 내주면 오타 난 요청이 200 으로 성공해 보인다 — 2026-09-22 heartbeat 누락의 진짜 원인
