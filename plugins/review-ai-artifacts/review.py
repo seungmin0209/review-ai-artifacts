@@ -47,6 +47,7 @@ ap.add_argument("--ack", help="반영을 완료한 제출 ID")
 ap.add_argument("--result", default="반영 완료", help="--ack 처리 결과")
 ap.add_argument("--changes", help='--ack 와 함께: 무엇을 왜 바꿨는지. JSON 목록 [{"n":1,"what":"...","why":"...","path":"(생략하면 그 댓글의 요소)"}]. 화면에서 노란 테두리로 보인다')
 ap.add_argument("--close", action="store_true", help="이 문서의 편집기 서버만 내린다 (다른 문서 서버는 그대로)")
+ap.add_argument("--takeover", action="store_true", help="사용자가 '이어받아·낚아채' 라고 했을 때만: 다른 세션이 띄운 이 문서 서버를 내리고 --session 으로 다시 띄운다. 미처리 제출도 이 세션 앞으로 돌린다")
 ap.add_argument("--doctor", action="store_true", help="떠 있는 편집기를 모두 훑어 제출이 묻힌 곳·ack 가 빠진 곳을 찾는다 (문서 인자 없이 실행)")
 ap.add_argument("--idle", type=int, default=120, help="브라우저 탭이 닫혀 요청이 이만큼(분) 없으면 스스로 종료. 0 이면 끄지 않음")
 A = ap.parse_args()
@@ -76,7 +77,7 @@ if A.doctor:
         if not h.get("doc"): continue
         live += 1
         doc = pathlib.Path(h["doc"]); evs = doc.parent / "_review_events.jsonl"
-        pend = [r for r in review_events.read(evs) if nfc(r.get("doc", "")) == nfc(doc) and r.get("status") == "new"] if evs.exists() else []
+        pend = [r for r in review_events.read(evs) if r.get("doc") == str(doc) and r.get("status") == "new"] if evs.exists() else []
         why = []
         if pend and not h.get("watched") and not h.get("working"):
             why.append(f"제출 {len(pend)}건이 아무에게도 가지 않았다 — 이 문서를 지켜보는 세션이 없다")
@@ -123,7 +124,7 @@ if THREAD:
     THREAD = str(uuid.UUID(THREAD))  # Exact session only; never route by display name or --last.
 if A.ack:
     row = next((r for r in review_events.read(EVENTS) if r.get("id") == A.ack), None)
-    if row is None or nfc(row.get("doc", "")) != nfc(DOC): raise SystemExit("이 문서의 제출 ID가 아닙니다")   # 상대 경로는 cwd(한글 폴더면 NFD)로 풀린다 — 제출 기록은 NFC
+    if row is None or row.get("doc") != str(DOC): raise SystemExit("이 문서의 제출 ID가 아닙니다")
     fields = dict(status="done", result=A.result)
     if A.changes:
         try: items = json.loads(A.changes)
@@ -170,6 +171,23 @@ def kill_port(port, why):
           + ("" if port_closed(port) else " — 아직 응답합니다. 직접 확인하세요"), flush=True)
 
 PORT, ALREADY = pick_port(DOC, A.port)
+if A.takeover:
+    if not A.session: raise SystemExit("--takeover 에는 --session(이 세션 ID)이 필요합니다")
+    # ponytail: 같은 폴더에서 이름 줄기(공백·-·_ 제거)가 같은 문서를 '다른 판'으로 본다. 빌드 스크립트 추적은 하지 않는다
+    stem = lambda p: re.sub(r"[\s_-]+", "", nfc(pathlib.Path(p).stem)).lower()
+    import socket, urllib.request
+    for p in range(8901, 8991):
+        with socket.socket() as sk:
+            if p == PORT or sk.connect_ex(("127.0.0.1", p)) != 0: continue
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{p}/doc", timeout=0.3) as r: other = nfc(r.read().decode("utf-8", "replace"))
+        except Exception: continue
+        if other != nfc(DOC) and pathlib.Path(other).parent == DOC.parent and stem(other) == stem(DOC):
+            print(f"같은 문서의 다른 판이 떠 있다: 포트 {p} {pathlib.Path(other).name} — 사용자는 이쪽에서 제출할 수 있다. 같이 --takeover 하라", flush=True)
+    moved = [r["id"] for r in review_events.read(EVENTS) if r.get("doc") == str(DOC) and r.get("status") == "new" and r.get("owner") != A.session]
+    for i in moved: review_events.update(EVENTS, i, owner=A.session)   # 옛 주인 앞으로 묻힌 제출을 이 세션 Monitor 가 시작할 때 집게 한다
+    if moved: print(f"미처리 제출 {len(moved)}건을 이 세션 앞으로 돌렸다: {' '.join(moved)}", flush=True)
+    if ALREADY: kill_port(PORT, "이어받기"); ALREADY = False
 if A.close:
     if not ALREADY: print(f"떠 있지 않음: {DOC.name}" + ("" if A.port else " — 8901~8990 만 훑었다. --port 로 다른 자리에 띄웠다면 같은 --port 를 함께 준다")); sys.exit(0)
     import urllib.request
@@ -742,12 +760,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             mine = {OWNER} | set(LISTENERS)   # 이어받은 세션 앞으로 간 제출도 이 화면의 대기 건수다. 그 세션의 heartbeat 가 멎어도 미처리 제출이 목록에서 사라지면 안 되므로 '한 번이라도 들었던' 세션을 전부 센다
             st_ = review_events.status(EVENTS, DOC, THREAD if CODEX else None, mine); st_["watched"] = watched(); st_["listeners"] = listeners()
             st_["working"] = working() and bool(st_.get("pending_count"))   # 깨워 둔 세션이 아직 반영 중 — 미처리 제출이 남아 있을 때만 그렇게 본다
-            chg = [r for r in review_events.read(EVENTS) if nfc(r.get("doc", "")) == nfc(DOC) and r.get("changes")]
+            chg = [r for r in review_events.read(EVENTS) if r.get("doc") == str(DOC) and r.get("changes")]
             st_["chg_rev"] = (chg[-1].get("id") or "") + ":" + str(len(chg[-1]["changes"])) if chg else ""   # 마지막 반영의 id+건수. 바뀌면 화면이 변경 목록을 다시 받는다
             return reply(self, 200, json.dumps(st_, ensure_ascii=False), "application/json")
         if self.path.startswith("/mtime"): return reply(self, 200, str(DOC.stat().st_mtime_ns))
         if self.path == "/changes":   # 가장 최근 반영의 변경 표시
-            rows = [r for r in review_events.read(EVENTS) if nfc(r.get("doc", "")) == nfc(DOC) and r.get("changes")]
+            rows = [r for r in review_events.read(EVENTS) if r.get("doc") == str(DOC) and r.get("changes")]
             return reply(self, 200, json.dumps(rows[-1]["changes"] if rows else [], ensure_ascii=False), "application/json")
         if self.path.startswith("/doc"): return reply(self, 200, nfc(DOC))
         if self.path.split("?")[0] not in ("/", "/index.html"):   # 모르는 경로에 문서를 내주면 오타 난 요청이 200 으로 성공해 보인다 — 2026-09-22 heartbeat 누락의 진짜 원인

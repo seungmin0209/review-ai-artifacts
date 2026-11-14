@@ -48,6 +48,7 @@ def main():
         folder = pathlib.Path(tmp)
         woken_doc, woken = boot(folder, "woken.html", 8988, "sess-woken")      # 감시 세션이 있었던 문서
         orphan_doc, orphan = boot(folder, "orphan.html", 8989, "sess-orphan")  # 아무도 지켜본 적 없는 문서
+        procs = [woken, orphan]
         try:
             assert call(8988, "/status")["watched"] is False, "heartbeat 전에는 연결로 보이면 안 된다"
 
@@ -87,15 +88,33 @@ def main():
             assert row["owner"] == "taker", f"제출이 끊긴 주인 앞으로 갔다: {row['owner']}"
             assert call(8989, "/status")["pending_count"] == 2, "이어받은 세션 앞으로 간 제출이 대기 건수에서 빠졌다"
 
+            # 사용자가 "이어받아" 라고 하면 --takeover: 서버를 내 세션으로 다시 띄우고, 묻힌 제출을 내 앞으로 돌리고,
+            # 같은 문서의 다른 판(이름 줄기가 같은 파일)이 떠 있으면 알린다. 2026-11-14 md 만 이어받고 html 쪽 제출을 놓쳤다.
+            sib_doc, sib = boot(folder, "or_phan.md", 8987, "sess-orphan"); procs.append(sib)
+            log = folder / "takeover.log"
+            taker = subprocess.Popen([sys.executable, str(SKILL / "review.py"), str(orphan_doc), "--no-open", "--port", "8989",
+                                      "--agent", "Claude", "--session", "boss", "--takeover"],
+                                     env=ENV, stdout=log.open("w"), stderr=subprocess.STDOUT); procs.append(taker)
+            for _ in range(50):
+                try:
+                    if call(8989, "/health")["owner"] == "boss": break
+                except Exception: pass
+                time.sleep(.1)
+            assert call(8989, "/health")["owner"] == "boss", "이어받기 뒤에도 옛 주인이 서버를 쥐고 있다"
+            rows = [json.loads(l) for l in (folder / "_review_events.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
+            left = [r["owner"] for r in rows if r["doc"] == str(orphan_doc.resolve()) and r["status"] == "new"]
+            assert left and set(left) == {"boss"}, f"묻힌 제출이 이어받은 세션 앞으로 오지 않았다: {left}"
+            assert "8987" in log.read_text(encoding="utf-8"), f"같은 문서의 다른 판을 알리지 않았다:\n{log.read_text(encoding='utf-8')}"
+
             subprocess.run([sys.executable, str(SKILL / "review.py"), str(woken_doc), "--ack", eid,
                             "--result", "반영함"], env=ENV, check=True, stdout=subprocess.DEVNULL)
             st = call(8988, "/status")
             assert st["pending_count"] == 0 and st["working"] is False, f"ack 뒤에도 반영 중으로 남았다: {st}"
             assert st["status"] == "done", st
 
-            print("통과 — 반영 중 공백 유지 · 주인 없는 문서는 끊김 · 이어받은 세션 전달 · --doctor 가 묻힌 제출 포착")
+            print("통과 — 반영 중 공백 유지 · 주인 없는 문서는 끊김 · 이어받은 세션 전달 · --doctor 가 묻힌 제출 포착 · --takeover")
         finally:
-            for p in (woken, orphan):
+            for p in procs:
                 p.terminate(); p.wait(timeout=5)
 
 
